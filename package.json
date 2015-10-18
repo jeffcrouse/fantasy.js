@@ -1,0 +1,21 @@
+{
+  "name": "fantasy",
+  "version": "0.0.1",
+  "description": "Fantasy video maker",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jeff Crouse <jeff@seethroughlab.com> (http://www.jeffish.com)",
+  "license": "MIT",
+  "dependencies": {
+    "async": "^1.4.2",
+    "glob": "^5.0.15",
+    "gm": "^1.20.0",
+    "id3js": "^1.1.3",
+    "mkdirp": "^0.5.1",
+    "node-persist": "0.0.6",
+    "request": "^2.65.0",
+    "wordwrap": "^1.0.0"
+  }
+}
