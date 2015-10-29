@@ -18,15 +18,16 @@ var fs = require('fs');
 // - Use "spawn" instead of "exec" for downloads so that you can see feedback/progress in real-time
 // - Make sure the editing loop doesn't go beyond the duration of the video
 // - Make a grid of videos instead of sequential ediing -- but keep oldediting styles. command line option for editing style.
+// - Do all editing as AVI (or some other low-compression format) and only MP$ at the end.
 // https://ffmpeg.org/pipermail/ffmpeg-user/2011-July/001718.html
 
 //
 // COMMAND LINE OPTIONS
 //
 var title = "Amateur Fantasy";
-var search = "voyeur"
-var tags = ["teen", "amateur", "voyeur"];
-var output = path.resolve(process.env.HOME, "Desktop", "fantasy01.mp4");
+var search = "masturbate"
+var tags = ["masturbate", "teen"];
+var output = path.resolve(process.env.HOME, "Desktop", "fantasy02.mp4");
 var num_videos=3;
 var glitch = 0.5;
 
@@ -256,7 +257,7 @@ var get_song_info = function(done) {
 			if(err) return done(err);
 			console.log(tags);
 
-			get_duration(music, function(err, duration){
+			get_duration(path, function(err, duration){
 				if(err) return done(err);
 
 				var song = {tags: tags, duration: duration, path: path};
@@ -370,7 +371,6 @@ var make_outro_video = function(done) {
 
 		console.log("======make_outro_video======");
 
-		console.log("make_outro_video");
 		var cmd = util.format('ffmpeg -loop 1 -i "%s" -c:v libx264 -t 15 -pix_fmt yuv420p -vf scale=640:640 "%s"', outro_image, outro_video);
 		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', outro_video, silence, outro_video);
 
@@ -575,22 +575,27 @@ var make_assembled = function(done) {
 		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', intro_video, glitched_mp4, outro_video, song.path);
 
 		var filters = [];
+
+		// Add intro video
 		filters.push(util.format('[0:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v0]'));
 		filters.push(util.format('[0:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a0]'));
 
+		// Add main mix
 		filters.push(util.format('[1:v]scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v1]'));
 		filters.push(util.format('[1:a]asetpts=PTS-STARTPTS[a1]'));
 		
+		// Add outro video
 		filters.push(util.format('[2:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]'));
 		filters.push(util.format('[2:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a2]'));
 
-	
-		filters.push(util.format('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]'));
+		// concat all clips
+		filters.push(util.format('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][unmixed_audio]'));
 
-		filters.push('[3:a][a]amerge,pan=stereo:c0<c0+c2:c1<c1+c3[out]')
+		// merge music into mix
+		filters.push('[3:a][unmixed_audio]amerge,pan=stereo:c0<c0+c2:c1<c1+c3[a]')
 
 
-		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[out]" ', filters.join(";"));
+		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" ', filters.join(";"));
 		cmd += util.format('-c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p ', levels[6]);
 		cmd += util.format('"%s"', assembled);
 
@@ -609,14 +614,19 @@ var make_assembled = function(done) {
 
 
 // -----------------------------------------------------------------
-var add_music = function(done) {
-	fs.stat(soundtrack, function(err, stat) {
+var move_output = function(done) {
+	fs.stat(output, function(err, stat) {
 		if(err==null) return done();
 
-		done();
+		fs.rename(assembled, output, done)
 	});
 }
 
+
+// -----------------------------------------------------------------
+var cleanup = function(done) {
+	done();
+}
 
 // -----------------------------------------------------------------
 var tasks = [
@@ -639,7 +649,9 @@ var tasks = [
 	make_intro_video,
 	make_outro_image,
 	make_outro_video,
-	make_assembled
+	make_assembled,
+	move_output,
+	cleanup,
 ];
 
 async.series(tasks, function(err){
