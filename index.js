@@ -25,10 +25,10 @@ var fs = require('fs');
 // COMMAND LINE OPTIONS
 //
 var title = "Amateur Fantasy";
-var search = "masturbate"
-var tags = ["masturbate", "teen"];
-var output = path.resolve(process.env.HOME, "Desktop", "fantasy02.mp4");
-var num_videos=3;
+var search = "sybian"
+var tags = ["teen"];
+var output = path.resolve(process.env.HOME, "Desktop", "fantasy03.mp4");
+var num_videos=5;
 var glitch = 0.5;
 
 
@@ -38,13 +38,13 @@ var glitch = 0.5;
 var working_dir = output.replace(path.extname(output), "_tmp");
 var silence = path.join(working_dir, "silence.mp2");
 var intro_image = path.join(working_dir, "intro.png");
-var intro_video = path.join(working_dir, "intro.mp4");
+var intro_video = path.join(working_dir, "intro.avi");
 var outro_image = path.join(working_dir, "outro.png");
-var outro_video = path.join(working_dir, "outro.mp4");
+var outro_video = path.join(working_dir, "outro.avi");
 var concatted = path.join(working_dir, "concatted.avi");
 var concatted_audio = path.join(working_dir, "concatted_audio.mp3");
 var glitched_avi = path.join(working_dir, "glitched.avi");
-var glitched_mp4 = path.join(working_dir, "glitched.mp4");
+var glitched_waudio = path.join(working_dir, "glitched_waudio.avi");
 var assembled = path.join(working_dir, "assembled.mp4");
 var soundtrack = path.join(working_dir, "soundtrack.mp4");
 var bold = path.join(__dirname, "fonts", "MAGNUM.TTF");
@@ -163,7 +163,7 @@ var get_top_videos = function(done) {
 
 	var search_results = [].concat(
 		storage.getItemSync("redtube"), 
-		storage.getItemSync("youporn"), 
+		//storage.getItemSync("youporn"), 
 		storage.getItemSync("pornhub")
 	);
 
@@ -322,7 +322,7 @@ var make_intro_video = function(done) {
 
 		console.log("======make_intro_video======");
 
-		var cmd = util.format('ffmpeg -loop 1 -i "%s" -c:v libx264 -t 15 -pix_fmt yuv420p -vf scale=640:640 "%s" ', intro_image, intro_video);
+		var cmd = util.format('ffmpeg -loop 1 -i "%s" -t 15 -vf scale=640:640 "%s" ', intro_image, intro_video);
 		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', intro_video, silence, intro_video);
 
 		console.log(cmd);
@@ -371,7 +371,7 @@ var make_outro_video = function(done) {
 
 		console.log("======make_outro_video======");
 
-		var cmd = util.format('ffmpeg -loop 1 -i "%s" -c:v libx264 -t 15 -pix_fmt yuv420p -vf scale=640:640 "%s"', outro_image, outro_video);
+		var cmd = util.format('ffmpeg -loop 1 -i "%s" -t 15 -vf scale=640:640 "%s"', outro_image, outro_video);
 		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', outro_video, silence, outro_video);
 
 		console.log(cmd);
@@ -433,7 +433,7 @@ var make_ffmpeg_command = function(done) {
 
 
 	// Keep adding filters and clips until we reach the song duration
-	while(duration < song.duration) {
+	while(duration < song.duration-10) {
 		var i=0;
 		top_videos.forEach(function(video){
 
@@ -544,24 +544,25 @@ var make_glitch_avi = function(done) {
 	});
 }
 
+
 // -----------------------------------------------------------------
-var make_glitch_mp4 = function(done) {
-	fs.stat(glitched_mp4, function(err, stat) {
+var make_glitch_waudio = function(done) {
+	fs.stat(glitched_waudio, function(err, stat) {
 		if(err==null) return done();
 
-		console.log("======make_glitch_mp4======");
+		console.log("======glitched_waudio======");
 
-		var cmd = util.format('ffmpeg -i "%s" -i "%s" -map 0:v -map 1:a ', glitched_avi, concatted_audio);
-		cmd += util.format('-c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p "%s"', levels[6], glitched_mp4);
+		var cmd = util.format('ffmpeg -i "%s" -i "%s" -map 0:v -map 1:a "%s"', glitched_avi, concatted_audio, glitched_waudio);
 		console.log(cmd);
 
 		exec(cmd, function(error, stdout, stderr){
 			if(error) return done(error);
 			
-			fs.access(glitched_mp4, fs.R_OK | fs.W_OK, done);
+			fs.access(glitched_waudio, fs.R_OK | fs.W_OK, done);
 		});
 	});
 }
+
 
 // -----------------------------------------------------------------
 var make_assembled = function(done) {
@@ -572,36 +573,36 @@ var make_assembled = function(done) {
 
 		var song = storage.getItemSync("song");
 
-		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', intro_video, glitched_mp4, outro_video, song.path);
+		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', 
+			intro_video, glitched_waudio, outro_video, song.path);
 
 		var filters = [];
 
 		// Add intro video
-		filters.push(util.format('[0:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v0]'));
-		filters.push(util.format('[0:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a0]'));
+		filters.push('[0:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v0]');
+		filters.push('[0:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a0]');
 
 		// Add main mix
-		filters.push(util.format('[1:v]scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v1]'));
-		filters.push(util.format('[1:a]asetpts=PTS-STARTPTS[a1]'));
+		filters.push('[1:v]scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v1]');
+		filters.push('[1:a]asetpts=PTS-STARTPTS[a1]');
 		
 		// Add outro video
-		filters.push(util.format('[2:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]'));
-		filters.push(util.format('[2:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a2]'));
+		filters.push('[2:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]');
+		filters.push('[2:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a2]');
 
 		// concat all clips
-		filters.push(util.format('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][unmixed_audio]'));
+		filters.push('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][audio_track]');
+
+		// adjust audio levels of audio tracks
+		filters.push('[audio_track]volume=volume=1.5[audio_track2]')
+		filters.push('[3:a]volume=volume=0.5[song]');
 
 		// merge music into mix
-		filters.push('[3:a][unmixed_audio]amerge,pan=stereo:c0<c0+c2:c1<c1+c3[a]')
+		filters.push('[song][audio_track2]amerge[a]')
 
-
+		// Make the rest of the command
 		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" ', filters.join(";"));
-		cmd += util.format('-c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p ', levels[6]);
-		cmd += util.format('"%s"', assembled);
-
-		// cmd += util.format('[0:v]');
-		// cmd += '-filter_complex "[0:0][1:0][1:1][2:0]concat=n=3:v=1:a=1[v][a1]" ';
-  // 		cmd += util.format('-map "[v]" -map "[a1]" -c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p "%s"', assembled);
+		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', levels[5], assembled);
 
 		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
@@ -634,7 +635,7 @@ var tasks = [
 	init_persist, 
 	get_song_info,
 	search_pornhub, 
-	search_youporn, 
+	//search_youporn, 
 	search_redtube, 
 	get_top_videos, 
 	download_videos,
@@ -643,7 +644,7 @@ var tasks = [
 	make_concatted,
 	export_audio,
 	make_glitch_avi,
-	make_glitch_mp4,
+	make_glitch_waudio,
 	make_silence,
 	make_intro_image,
 	make_intro_video,
