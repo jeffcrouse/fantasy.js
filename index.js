@@ -13,11 +13,12 @@ var fs = require('fs');
 
 
 // TODO:
-// 1. Try multiple times for each search result
-// 2. check for required programs
-// 3. Use multiple storages so that I don't have to re-set "job" every time
-// 4. Use "span" instead of "exec" for downloads so that you can see feedback/progress in real-time
-// 5. Make sure the loop doesn't go beyond the duration of the video
+// - Try multiple times for each search result
+// - check for required programs
+// - Use "spawn" instead of "exec" for downloads so that you can see feedback/progress in real-time
+// - Make sure the editing loop doesn't go beyond the duration of the video
+// - Make a grid of videos instead of sequential ediing -- but keep oldediting styles. command line option for editing style.
+// https://ffmpeg.org/pipermail/ffmpeg-user/2011-July/001718.html
 
 //
 // COMMAND LINE OPTIONS
@@ -25,7 +26,6 @@ var fs = require('fs');
 var title = "Amateur Fantasy";
 var search = "voyeur"
 var tags = ["teen", "amateur", "voyeur"];
-var music = "/Users/jeff/Music/iTunes/iTunes Media/Music/MACINTOSH PLUS/FLORAL SHOPPE/06 ECCOと悪寒ダイビング.mp3";
 var output = path.resolve(process.env.HOME, "Desktop", "fantasy01.mp4");
 var num_videos=3;
 var glitch = 0.5;
@@ -35,21 +35,24 @@ var glitch = 0.5;
 //	CONFIG
 //
 var working_dir = output.replace(path.extname(output), "_tmp");
+var silence = path.join(working_dir, "silence.mp2");
 var intro_image = path.join(working_dir, "intro.png");
-var intro_video = path.join(working_dir, "intro.avi");
+var intro_video = path.join(working_dir, "intro.mp4");
 var outro_image = path.join(working_dir, "outro.png");
-var outro_video = path.join(working_dir, "outro.avi");
+var outro_video = path.join(working_dir, "outro.mp4");
 var concatted = path.join(working_dir, "concatted.avi");
-var glitched = path.join(working_dir, "glitched.avi");
-var assembled = path.join(working_dir, "assembled.avi");
-var soundtrack = path.join(working_dir, "soundtrack.avi");
+var concatted_audio = path.join(working_dir, "concatted_audio.mp3");
+var glitched_avi = path.join(working_dir, "glitched.avi");
+var glitched_mp4 = path.join(working_dir, "glitched.mp4");
+var assembled = path.join(working_dir, "assembled.mp4");
+var soundtrack = path.join(working_dir, "soundtrack.mp4");
 var bold = path.join(__dirname, "fonts", "MAGNUM.TTF");
 var med = path.join(__dirname, "fonts", "PressStart2P.ttf");
 var light = path.join(__dirname, "fonts", "Railway.ttf");
 var autodatamosh = path.join(__dirname, "bin", "autodatamosh.pl");
 
 
-
+var levels="ultrafast superfast veryfast faster fast medium slow slower veryslow".split(" "); // for FFMPEG
 
 //
 //	FUNCTIONS
@@ -157,7 +160,6 @@ var search_redtube = function(done) {
 var get_top_videos = function(done) {
 	if(storage.getItemSync("top_videos")) return done();	
 
-
 	var search_results = [].concat(
 		storage.getItemSync("redtube"), 
 		storage.getItemSync("youporn"), 
@@ -243,20 +245,46 @@ var get_durations = function(done) {
 var get_song_info = function(done) {
 	if(storage.getItemSync("song")) return done();
 
-	id3({ file: music, type: id3.OPEN_LOCAL }, function(err, tags) {
-		if(err) return done(err);
-		console.log(tags);
+	var pattern = path.join(__dirname, "music", "*.mp3")
+	glob( pattern, {}, function(err, files){
+		if(err) return done("Error picking song");
 
-		get_duration(music, function(err, duration){
+		var n = Math.floor(Math.random()*files.length);
+		var path = files[n];	
+
+		id3({ file: path, type: id3.OPEN_LOCAL }, function(err, tags) {
 			if(err) return done(err);
+			console.log(tags);
 
-			tags.duration = duration;
-			storage.setItemSync("song", tags);
-			done();
+			get_duration(music, function(err, duration){
+				if(err) return done(err);
+
+				var song = {tags: tags, duration: duration, path: path};
+		
+				storage.setItemSync("song", song);
+				done();
+			});
 		});
 	});
 }
 
+// -----------------------------------------------------------------
+var make_silence = function(done){
+	fs.stat(silence, function(err, stat) {
+		if(err==null) return done();
+
+		var cmd = 'ffmpeg -ar 48000 -t 15 -f s16le -acodec pcm_s16le -i /dev/zero -ab 64K -f mp2 ';
+		cmd += util.format('-acodec mp2 -y "%s"', silence);
+
+		console.log("======make_silence======");
+		console.log(cmd);
+		exec(cmd, function(error, stdout, stderr){
+			if(error) return done(error);
+
+			fs.access(silence, fs.R_OK | fs.W_OK, done);
+		});
+	});
+}
 
 // -----------------------------------------------------------------
 var make_intro_image = function(done) {
@@ -266,8 +294,9 @@ var make_intro_image = function(done) {
 
 		var song = storage.getItemSync("song");
 
-		console.log("make_intro_image");
-		var song_credit = wordwrap(40)(util.format("music: %s by %s", song.title, song.artist));
+		console.log("======make_intro_image======");
+
+		var song_credit = wordwrap(40)(util.format("music: %s by %s", song.tags.title, song.tags.artist));
 		gm(640, 640, "#000000")
 			.quality(100)
 			.fill( 'rgb(255, 0, 255)' )
@@ -290,10 +319,15 @@ var make_intro_video = function(done) {
 	fs.stat(intro_video, function(err, stat) {
 		if(err==null) return done();
 
-		console.log("make_intro_video");
-		var cmd = util.format('ffmpeg -y -loop 1 -r 23.976 -i "%s" -t 00:00:02 -vcodec qtrle -an "%s"', intro_image, intro_video);
+		console.log("======make_intro_video======");
+
+		var cmd = util.format('ffmpeg -loop 1 -i "%s" -c:v libx264 -t 15 -pix_fmt yuv420p -vf scale=640:640 "%s" ', intro_image, intro_video);
+		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', intro_video, silence, intro_video);
+
+		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
-			if(error) return error(done);
+			if(error) return done(error);
+
 			fs.access(intro_video, fs.R_OK | fs.W_OK, done);
 		});
 	});
@@ -307,6 +341,8 @@ var make_outro_image = function(done) {
 	fs.stat(outro_image, function(err, stat) {
 		if(err==null) return done();
 		
+		console.log("======make_outro_image======");
+
 		var song = storage.getItemSync("song");
 		var song_credit = wordwrap(40)(util.format("music: %s by %s", song.title, song.artist));
 		gm(640, 640, "#000000")
@@ -332,10 +368,16 @@ var make_outro_video = function(done) {
 	fs.stat(outro_video, function(err, stat) {
 		if(err==null) return done();
 
+		console.log("======make_outro_video======");
+
 		console.log("make_outro_video");
-		var cmd = util.format('ffmpeg -y -loop 1 -r 23.976 -i "%s" -t 00:00:02 -vcodec qtrle -an "%s"', outro_image, outro_video);
+		var cmd = util.format('ffmpeg -loop 1 -i "%s" -c:v libx264 -t 15 -pix_fmt yuv420p -vf scale=640:640 "%s"', outro_image, outro_video);
+		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', outro_video, silence, outro_video);
+
+		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
-			if(error) return error(done);
+			if(error) return done(error);
+
 			fs.access(outro_video, fs.R_OK | fs.W_OK, done);
 		});
 	});
@@ -375,6 +417,8 @@ var make_ffmpeg_command = function(done) {
 	if(storage.getItemSync("ffmpeg")) 
 		return done();
 
+	console.log("======make_ffmpeg_command======");
+
 	var top_videos = storage.getItemSync("top_videos");
 	var song = storage.getItemSync("song");
 
@@ -393,10 +437,16 @@ var make_ffmpeg_command = function(done) {
 		var i=0;
 		top_videos.forEach(function(video){
 
-			var start = round2(video.pos) || 0;
-			var t = randomRange(10, 30);
+			var start = video.pos ? round2(video.pos) : video.duration/2.0;
+			var t = randomRange(2, 4);			
 			var end = round2(start + t);
+			video.pos = end;
 
+			if(end > video.duration) {
+				end = video.duration;
+				video.pos = null;
+			}
+			
 			var vname = util.format('[v%d]', clips.length);
 			var aname = util.format('[a%d]', clips.length);
 			
@@ -404,15 +454,15 @@ var make_ffmpeg_command = function(done) {
 			filters.push(util.format('[%d:a]atrim=start=%s:end=%s,asetpts=PTS-STARTPTS%s',i,start,end,aname));
 
 			clips.push([vname,aname].join(""));
-
-			video.pos = end;
+			
 			duration += t;
 			i++;
 		});
 	}
 
 	filters.push(util.format('%sconcat=n=%d:v=1:a=1[v][a]', clips.join(""), clips.length));
-	cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" "%s"', filters.join(";"), concatted);
+	cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" -c:v mpeg4 -vtag xvid -qscale:v 3 -c:a libmp3lame -qscale:a 4 ', filters.join(";"));
+	cmd += util.format('"%s"', concatted);
 	storage.setItemSync("ffmpeg", cmd);
 	done();
 }
@@ -423,7 +473,10 @@ var make_concatted = function(done) {
 	fs.stat(concatted, function(err, stat) {
 		if(err==null) return done();
 
+		console.log("======make_concatted======");
+
 		var cmd = storage.getItemSync("ffmpeg");
+		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
 			if(error) return done(error);
 
@@ -432,6 +485,22 @@ var make_concatted = function(done) {
 	});
 }
 
+// -----------------------------------------------------------------
+var export_audio = function(done) {
+	fs.stat(concatted_audio, function(err, stat){
+		if(err==null) return done();
+
+		console.log("======export_audio======");
+
+		var cmd = util.format('ffmpeg -i "%s" -b:a 192K -vn "%s"', concatted, concatted_audio);
+		console.log(cmd);
+		exec(cmd, function(error, stdout, stderr){
+			if(error) return done(error);
+
+			fs.access(concatted_audio, fs.R_OK | fs.W_OK, done);
+		});
+	});
+}
 
 Math.clamp = function(num, min, max) {
 	if(min>max) console.warn("Math.clamp: min > max");
@@ -444,45 +513,92 @@ Math.map = function (value, istart, istop, ostart, ostop, clamp) {
 }
 
 // -----------------------------------------------------------------
-var make_glitch = function(done) {
+var make_glitch_avi = function(done) {
 	
-	fs.stat(glitched, function(err, stat) {
+	fs.stat(glitched_avi, function(err, stat) {
 		if(err==null) return done();
 
-		var fprob = Math.map(glitch, [0, 1], [0.5, 1]);
-		var dprob = Math.map(glitch, [0, 1], [0, 1]);
-		var dmin = Math.floor(Math.map(glitch, [0, 1], [0, 10]))
-		var dmax = Math.floor(Math.map(glitch, [0, 1], [10, 40]))
+		console.log("======make_glitch_avi======");
+
+		var fprob = Math.map(glitch, 0, 1, 0.5, 1);
+		var dprob = Math.map(glitch, 0, 1, 0, 1);
+		var dmin = Math.floor(Math.map(glitch, 0, 1, 0, 10))
+		var dmax = Math.floor(Math.map(glitch, 0, 1, 10, 40))
 
 		var cmd = [
 			"perl", autodatamosh,
 			"-fprob", fprob, 
-			"-dprob ", dprob, 
+			"-dprob", dprob, 
 			"-dmin", dmin, 
 			"-dmax", dmax, 
 			util.format('-i "%s"', concatted), 
-			util.format('-o "%s"', glitched)
+			util.format('-o "%s"', glitched_avi)
 		].join(" ");
 
 		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
 			if(error) return done(error);
 			
-			fs.access(glitched, fs.R_OK | fs.W_OK, done);
+			fs.access(glitched_avi, fs.R_OK | fs.W_OK, done);
 		});
 	});
 }
 
+// -----------------------------------------------------------------
+var make_glitch_mp4 = function(done) {
+	fs.stat(glitched_mp4, function(err, stat) {
+		if(err==null) return done();
+
+		console.log("======make_glitch_mp4======");
+
+		var cmd = util.format('ffmpeg -i "%s" -i "%s" -map 0:v -map 1:a ', glitched_avi, concatted_audio);
+		cmd += util.format('-c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p "%s"', levels[6], glitched_mp4);
+		console.log(cmd);
+
+		exec(cmd, function(error, stdout, stderr){
+			if(error) return done(error);
+			
+			fs.access(glitched_mp4, fs.R_OK | fs.W_OK, done);
+		});
+	});
+}
 
 // -----------------------------------------------------------------
 var make_assembled = function(done) {
 	fs.stat(assembled, function(err, stat) {
 		if(err==null) return done();
 
-		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" ', intro_video, glitched, outro_video);
-		cmd += '-filter_complex "[0:v][1:v][1:a][2:v]concat=n=3:v=1:a=1[v][a]" -map "[v]" -map "[a]" ';
+		console.log("======make_assembled======");
+
+		var song = storage.getItemSync("song");
+
+		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', intro_video, glitched_mp4, outro_video, song.path);
+
+		var filters = [];
+		filters.push(util.format('[0:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v0]'));
+		filters.push(util.format('[0:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a0]'));
+
+		filters.push(util.format('[1:v]scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v1]'));
+		filters.push(util.format('[1:a]asetpts=PTS-STARTPTS[a1]'));
+		
+		filters.push(util.format('[2:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]'));
+		filters.push(util.format('[2:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a2]'));
+
+	
+		filters.push(util.format('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]'));
+
+		filters.push('[3:a][a]amerge,pan=stereo:c0<c0+c2:c1<c1+c3[out]')
+
+
+		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[out]" ', filters.join(";"));
+		cmd += util.format('-c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p ', levels[6]);
 		cmd += util.format('"%s"', assembled);
 
+		// cmd += util.format('[0:v]');
+		// cmd += '-filter_complex "[0:0][1:0][1:1][2:0]concat=n=3:v=1:a=1[v][a1]" ';
+  // 		cmd += util.format('-map "[v]" -map "[a1]" -c:v libx264 -preset %s -crf 24 -tune film -pix_fmt yuv420p "%s"', assembled);
+
+		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
 			if(error) return done(error);
 			
@@ -493,7 +609,7 @@ var make_assembled = function(done) {
 
 
 // -----------------------------------------------------------------
-var make_soundtrack = function(done) {
+var add_music = function(done) {
 	fs.stat(soundtrack, function(err, stat) {
 		if(err==null) return done();
 
@@ -515,13 +631,15 @@ var tasks = [
 	get_durations,
 	make_ffmpeg_command,
 	make_concatted,
-	make_glitch,
+	export_audio,
+	make_glitch_avi,
+	make_glitch_mp4,
+	make_silence,
 	make_intro_image,
 	make_intro_video,
 	make_outro_image,
 	make_outro_video,
-	make_assembled,
-	make_soundtrack
+	make_assembled
 ];
 
 async.series(tasks, function(err){
