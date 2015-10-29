@@ -10,30 +10,60 @@ var wordwrap = require('wordwrap');
 var gm = require('gm');
 var id3 = require('id3js');
 var fs = require('fs');
+var rimraf = require('rimraf');
+var which = require('which');
 
 
 // TODO:
-// - Try multiple times for each search result
-// - check for required programs
+// - Try multiple times for each search result (?? what does this mean? http failures?)
+// - implement requirements_check 
 // - Use "spawn" instead of "exec" for downloads so that you can see feedback/progress in real-time
-// - Make sure the editing loop doesn't go beyond the duration of the video
+// X Make sure the editing loop doesn't go beyond the duration of the video
 // - Make a grid of videos instead of sequential ediing -- but keep oldediting styles. command line option for editing style.
-// - Do all editing as AVI (or some other low-compression format) and only MP$ at the end.
-// https://ffmpeg.org/pipermail/ffmpeg-user/2011-July/001718.html
+// X Do all editing as AVI (or some other low-compression format) and only MP4 at the end.
+// X https://ffmpeg.org/pipermail/ffmpeg-user/2011-July/001718.html
+// - Add full setup instructions and requirements in README
+// - Turn "COMMAND LINE OPTIONS" into real command line options
+// - Start Tumblr for videos created. Post videos along with commands used to generate them
+// - Fix unicode characters in song names
+// - Add information about videos in title cards
+// - Either figure out what is wrong with youporn search, or add another site
+// - Add YouTube videos to the mix. 
+
+
+
+// PRINCIPLES:
+// - Do all editing with AVI (low compression). Cnly compress at the end.
+// - Persist all steps for quick pick-up on error
+// - Everything should work for everyone (ie: fallbacks for no search results, friendly error messages, etc)
+
+
+
 
 //
 // COMMAND LINE OPTIONS
 //
 var title = "Amateur Fantasy";
-var search = "sybian"
+var search = "voyeur"
 var tags = ["teen"];
-var output = path.resolve(process.env.HOME, "Desktop", "fantasy03.mp4");
-var num_videos=5;
+var output = path.resolve("output", "fantasy06.mp4");
+var num_videos=6;
 var glitch = 0.5;
 
 
 //
 //	CONFIG
+//
+
+var bold = path.join(__dirname, "fonts", "MAGNUM.TTF");
+var med = path.join(__dirname, "fonts", "PressStart2P.ttf");
+var light = path.join(__dirname, "fonts", "Railway.ttf");
+var autodatamosh = path.join(__dirname, "bin", "autodatamosh.pl");
+var levels="ultrafast superfast veryfast faster fast medium slow slower veryslow".split(" "); // for FFMPEG
+
+
+//
+//	INTERMEDIATE FILES
 //
 var working_dir = output.replace(path.extname(output), "_tmp");
 var silence = path.join(working_dir, "silence.mp2");
@@ -47,18 +77,19 @@ var glitched_avi = path.join(working_dir, "glitched.avi");
 var glitched_waudio = path.join(working_dir, "glitched_waudio.avi");
 var assembled = path.join(working_dir, "assembled.mp4");
 var soundtrack = path.join(working_dir, "soundtrack.mp4");
-var bold = path.join(__dirname, "fonts", "MAGNUM.TTF");
-var med = path.join(__dirname, "fonts", "PressStart2P.ttf");
-var light = path.join(__dirname, "fonts", "Railway.ttf");
-var autodatamosh = path.join(__dirname, "bin", "autodatamosh.pl");
 
 
-var levels="ultrafast superfast veryfast faster fast medium slow slower veryslow".split(" "); // for FFMPEG
 
 //
 //	FUNCTIONS
 //
 
+
+// ----------------------------------------------------------------
+// ffmpeg with appropriate codecs, fonts, youtube-dl, autodatamosh
+var requirements_check = function(done) {
+	done();
+}
 
 // ----------------------------------------------------------------
 var make_working_dir = function(done) {
@@ -182,8 +213,10 @@ var get_top_videos = function(done) {
 var download_videos = function(done){
 	var top_videos = storage.getItemSync("top_videos");
 
+
+
 	async.forEachOf(top_videos, function(video, id, next){
-		if(video.path) return next();
+		if(video.path) return next(); // TODO: check if videos exist before calling commands
 
 		var cmd = util.format('youtube-dl --no-continue -o "%s/%s.%%(ext)s" "%s"', working_dir, video.id, video.url);
 		console.log(cmd);
@@ -593,9 +626,9 @@ var make_assembled = function(done) {
 		// concat all clips
 		filters.push('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][audio_track]');
 
-		// adjust audio levels of audio tracks
-		filters.push('[audio_track]volume=volume=1.5[audio_track2]')
-		filters.push('[3:a]volume=volume=0.5[song]');
+		// adjust audio levels and formats of audio tracks
+		filters.push('[audio_track]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=1.5[audio_track2]')
+		filters.push('[3:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0.5[song]');
 
 		// merge music into mix
 		filters.push('[song][audio_track2]amerge[a]')
@@ -626,11 +659,12 @@ var move_output = function(done) {
 
 // -----------------------------------------------------------------
 var cleanup = function(done) {
-	done();
+	rimraf(working_dir, done);
 }
 
 // -----------------------------------------------------------------
 var tasks = [
+	requirements_check,
 	make_working_dir, 
 	init_persist, 
 	get_song_info,
