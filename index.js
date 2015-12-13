@@ -1,65 +1,61 @@
+#!/usr/bin/env node
+
 var async = require('async');
 var util = require('util');
 var request = require('request');
 var path = require('path');
 var mkdirp = require('mkdirp');
-var exec = require('child_process').exec
+var exec = require('child_process').exec;
+var spawn = require('child_process').spawn
 var storage = require('node-persist');
 var glob = require("glob")
 var wordwrap = require('wordwrap');
 var gm = require('gm');
-var id3 = require('id3js');
+var mm = require('musicmetadata');
 var fs = require('fs');
 var rimraf = require('rimraf');
 var which = require('which');
-
-
-// TODO:
-// - Try multiple times for each search result (?? what does this mean? http failures?)
-// - implement requirements_check 
-// - Use "spawn" instead of "exec" for downloads so that you can see feedback/progress in real-time
-// X Make sure the editing loop doesn't go beyond the duration of the video
-// - Make a grid of videos instead of sequential ediing -- but keep oldediting styles. command line option for editing style.
-// X Do all editing as AVI (or some other low-compression format) and only MP4 at the end.
-// X https://ffmpeg.org/pipermail/ffmpeg-user/2011-July/001718.html
-// - Add full setup instructions and requirements in README
-// - Turn "COMMAND LINE OPTIONS" into real command line options
-// - Start Tumblr for videos created. Post videos along with commands used to generate them
-// - Fix unicode characters in song names
-// - Add information about videos in title cards
-// - Either figure out what is wrong with youporn search, or add another site
-// - Add YouTube videos to the mix. 
-
-
-
-// PRINCIPLES:
-// - Do all editing with AVI (low compression). Cnly compress at the end.
-// - Persist all steps for quick pick-up on error
-// - Everything should work for everyone (ie: fallbacks for no search results, friendly error messages, etc)
-
+var argv = require('minimist')(process.argv.slice(2));
 
 
 
 //
 // COMMAND LINE OPTIONS
 //
-var title = "Amateur Fantasy";
-var search = "voyeur"
-var tags = ["teen"];
-var output = path.resolve("output", "fantasy06.mp4");
-var num_videos=6;
-var glitch = 0.5;
+var title = argv.title || "My Fantasy";
+var porn_search = argv.porn || "teacher";
+var youtube_search = argv.youtube || "fruit";
+var nsources=argv.nsources || 4;
+var glitch_factor=argv.glitch||10;
+if(argv._.length<1) {
+	console.error("output file missing.");
+	return process.exit(1);
+}
+var output = path.resolve(argv._[0]);
+
+
+
+if(nsources > 10 || nsources < 2) {
+	console.warn("nsources shoudl be between 2 and 10. Setting it to 4");
+	nsources = 4;
+}
+
+if(glitch_factor < 10 || glitch_factor > 100) {
+	console.warn("glitch shoudl be between 10 and 100. Setting it to 50");
+	glitch_factor = 50;
+}
 
 
 //
 //	CONFIG
 //
 
-var bold = path.join(__dirname, "fonts", "MAGNUM.TTF");
-var med = path.join(__dirname, "fonts", "PressStart2P.ttf");
-var light = path.join(__dirname, "fonts", "Railway.ttf");
+var cyberbit = path.join(__dirname, "fonts", "Cyberbit.ttf");
+var magnum = path.join(__dirname, "fonts", "MAGNUM.TTF");
+
 var autodatamosh = path.join(__dirname, "bin", "autodatamosh.pl");
-var levels="ultrafast superfast veryfast faster fast medium slow slower veryslow".split(" "); // for FFMPEG
+var LEVELS="ultrafast superfast veryfast faster fast medium slow slower veryslow".split(" "); // for FFMPEG
+var YOUTUBE_KEY="AIzaSyDa-9oAlMPr-4y9TYwjq0ZytIRUUM8JolM";
 
 
 //
@@ -84,6 +80,11 @@ var soundtrack = path.join(working_dir, "soundtrack.mp4");
 //	FUNCTIONS
 //
 
+// ----------------------------------------------------------------
+var arguments_check = function(done) {
+	var output_dir = path.dirname(path.resolve(output))
+	fs.access(output_dir, fs.W_OK, done);
+}
 
 // ----------------------------------------------------------------
 // ffmpeg with appropriate codecs, fonts, youtube-dl, autodatamosh
@@ -99,6 +100,7 @@ var make_working_dir = function(done) {
 
 // ----------------------------------------------------------------
 var init_persist = function(done){
+	console.log("init_persist");
 	var stringify = function(obj){ return JSON.stringify(obj, undefined, 2); };
 	storage.initSync({dir:working_dir, logging: false, stringify: stringify });	
 	done();
@@ -106,11 +108,13 @@ var init_persist = function(done){
 
 // ----------------------------------------------------------------
 var search_pornhub = function(done) {
+	console.log("search_pornhub");
 	if(storage.getItemSync("pornhub")) return done();
 
+	var tags = ["teen", "lesbian"];
 	var id = "44bc40f3bc04f65b7a35";
 	var url = util.format('http://www.pornhub.com/webmasters/search?id=%s&search=%s&tags[]=%s', 
-		id, search, tags.join(","));
+		id, porn_search, tags.join(","));
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
@@ -122,7 +126,8 @@ var search_pornhub = function(done) {
 				return {title: video.title, 
 					url: video.url, 
 					views: parseInt(video.views),
-					id: video.video_id };
+					id: video.video_id,
+					source: "pornhub" };
 			});
 
 			storage.setItemSync("pornhub", search_results)
@@ -136,10 +141,12 @@ var search_pornhub = function(done) {
 
 // ----------------------------------------------------------------
 var search_youporn = function(done) {
+	console.log("search_youporn");
 	if(storage.getItemSync("youporn")) return done();
 
+	var tags = ["teen", "lesbian"];
 	var url = util.format('http://www.youporn.com/api/webmasters/search?search=%s&tags[]=%s', 
-		search, tags.join(","));
+		porn_search, tags.join(","));
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
@@ -150,7 +157,8 @@ var search_youporn = function(done) {
 				return {title: video.title, 
 					url: video.url, 
 					views: parseInt(video.views),
-					id: video.video_id };
+					id: video.video_id,
+					source: "youporn" };
 			});
 
 			storage.setItemSync("youporn", search_results)
@@ -163,10 +171,12 @@ var search_youporn = function(done) {
 
 // ----------------------------------------------------------------
 var search_redtube = function(done) {
+	console.log("search_redtube");
 	if(storage.getItemSync("redtube")) return done();
 
+	var tags = ["teen", "lesbian"];
 	var url = util.format('http://api.redtube.com/?data=redtube.Videos.searchVideos&output=json&search=%s&tags[]=%s', 
-		search, tags.join(","));
+		porn_search, tags.join(","));
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
@@ -177,7 +187,8 @@ var search_redtube = function(done) {
 				return {title: video.video.title, 
 					url: video.video.url, 
 					views: parseInt(video.video.views), 
-					id: video.video.video_id };
+					id: video.video.video_id,
+					source: "redtube" };
 			});
 
 			storage.setItemSync("redtube", search_results);
@@ -189,7 +200,36 @@ var search_redtube = function(done) {
 }
 
 // ----------------------------------------------------------------
+var search_youtube = function(done) {
+	console.log("search_youtube");
+	if(storage.getItemSync('youtube')) return done();
+
+	var url = util.format('https://www.googleapis.com/youtube/v3/search?key=%s&part=snippet&q=%s&maxResults=%s', 
+		YOUTUBE_KEY, youtube_search, nsources);
+	console.log(url);
+	request(url, function (error, response, body) {
+		if(error || response.statusCode != 200)
+			return done("couldn't get youtube results");
+
+		var json = JSON.parse(body);
+		console.log("youtube", json.items.length, "results");
+		var search_results = json.items.map(function(item){
+			return {
+				title: item.snippet.title,
+				url: util.format('https://www.youtube.com/watch?v=%s', item.id.videoId),
+				id: item.id.videoId,
+				source: "youtube"
+			};
+		});
+
+		storage.setItemSync("youtube", search_results);
+		done();
+	});
+}
+
+// ----------------------------------------------------------------
 var get_top_videos = function(done) {
+	console.log("get_top_videos");
 	if(storage.getItemSync("top_videos")) return done();	
 
 	var search_results = [].concat(
@@ -204,35 +244,47 @@ var get_top_videos = function(done) {
 		return 0;
 	});
 
-	var top_videos = search_results.slice(0, num_videos);
+	var top_videos = search_results.slice(0, nsources);
+
+	var youtube = storage.getItemSync("youtube");
+	top_videos = top_videos.concat(youtube);
+
 	storage.setItemSync("top_videos", top_videos);
 	done();
 }
 
 // ----------------------------------------------------------------
 var download_videos = function(done){
+	console.log("download_videos");
 	var top_videos = storage.getItemSync("top_videos");
 
-
-
-	async.forEachOf(top_videos, function(video, id, next){
+	async.eachSeries(top_videos, function(video, next){
 		if(video.path) return next(); // TODO: check if videos exist before calling commands
 
-		var cmd = util.format('youtube-dl --no-continue -o "%s/%s.%%(ext)s" "%s"', working_dir, video.id, video.url);
-		console.log(cmd);
-		exec(cmd, function(error, stdout, stderr){
-			if(error) return next(error);
+		var download = spawn('youtube-dl', ['-o', util.format('%s/%s.%%(ext)s', working_dir, video.id), video.url]);
+
+		download.stdout.on('data', function (data) {
+			console.log('stdout: ' + data);
+		});
+
+		download.stderr.on('data', function (data) {
+			console.log('stderr: ' + data);
+		});
+
+		download.on('close', function (code) {
+			console.log('child process exited with code ' + code);
 
 			var pattern = util.format("%s/%s.*", working_dir, video.id);
 			glob(pattern, {}, function (err, files) {
 				if(err) return next(err);
 				if(!files.length) return next("couldn't find file");
 
-				top_videos[id].path =  files[0];
+				video.path =  files[0];
 				storage.setItemSync("top_videos", top_videos);
 				next();
 			});
 		});
+
 	}, done);
 }
 
@@ -240,6 +292,7 @@ var download_videos = function(done){
 // ---------------------------------------------------------------- 
 var get_duration = function(path, callback) {
 	var cmd = util.format('ffprobe -i "%s"', path);
+	console.log(cmd);
 	exec(cmd, function(err, stdout, stderr){
 		var matches = stderr.match(/Duration:\s{1}(\d+?):(\d+?):(\d+\.\d+?),/);
 		if(err) {
@@ -256,9 +309,10 @@ var get_duration = function(path, callback) {
 	});
 }
 
+
 // ----------------------------------------------------------------
 var get_durations = function(done) {
-
+	console.log("get_durations");
 	var top_videos = storage.getItemSync("top_videos");
 
 	async.forEachOfSeries(top_videos, function(video, id, next){
@@ -277,6 +331,7 @@ var get_durations = function(done) {
 
 // ----------------------------------------------------------------
 var get_song_info = function(done) {
+	console.log("get_song_info");
 	if(storage.getItemSync("song")) return done();
 
 	var pattern = path.join(__dirname, "music", "*.mp3")
@@ -284,16 +339,17 @@ var get_song_info = function(done) {
 		if(err) return done("Error picking song");
 
 		var n = Math.floor(Math.random()*files.length);
-		var path = files[n];	
+		var song_path = files[n];	
 
-		id3({ file: path, type: id3.OPEN_LOCAL }, function(err, tags) {
+		var parser = mm(fs.createReadStream(song_path), function (err, metadata) {
+
 			if(err) return done(err);
-			console.log(tags);
+			console.log(metadata);
 
-			get_duration(path, function(err, duration){
+			get_duration(song_path, function(err, duration){
 				if(err) return done(err);
 
-				var song = {tags: tags, duration: duration, path: path};
+				var song = {tags: metadata, duration: duration, path: song_path};
 		
 				storage.setItemSync("song", song);
 				done();
@@ -304,6 +360,7 @@ var get_song_info = function(done) {
 
 // -----------------------------------------------------------------
 var make_silence = function(done){
+	console.log("make_silence");
 	fs.stat(silence, function(err, stat) {
 		if(err==null) return done();
 
@@ -322,7 +379,7 @@ var make_silence = function(done){
 
 // -----------------------------------------------------------------
 var make_intro_image = function(done) {
-
+	console.log("make_intro_image");
 	fs.stat(intro_image, function(err, stat) {
 		if(err==null) return done();
 
@@ -330,26 +387,76 @@ var make_intro_image = function(done) {
 
 		console.log("======make_intro_image======");
 
-		var song_credit = wordwrap(40)(util.format("music: %s by %s", song.tags.title, song.tags.artist));
-		gm(640, 640, "#000000")
+		var img = gm(640, 640, "#000000")
 			.quality(100)
 			.fill( 'rgb(255, 0, 255)' )
-			.font( bold )
-		    .fontSize(48)
+			.font( magnum ).fontSize(48)
 			.drawText(0, '-100', title, 'Center')
-			.font( light )
-			.fontSize(24)
+			.font( cyberbit ).fontSize(24)
 			.drawText(0, '-50', "by Jeff Crouse", 'Center')
-			.drawText(0, '-10', song_credit, 'Center')
-			.write(intro_image, function(err){
-				if(err) return done(err);
-				fs.access(intro_image, fs.R_OK | fs.W_OK, done);
-			});
+			.drawText(0, '-10', song.tags.title, 'Center')
+			.drawText(0, '20', "by "+song.tags.artist, 'Center');
+
+		img.write(intro_image, function(err){
+			if(err) return done(err);
+			fs.access(intro_image, fs.R_OK | fs.W_OK, done);
+		});
 	});
 }
 
 // -----------------------------------------------------------------
+var make_outro_image = function(done) {
+	console.log("make_outro_image");
+
+	fs.stat(outro_image, function(err, stat) {
+		if(err==null) return done();
+		
+		console.log("======make_outro_image======");
+
+		var song = storage.getItemSync("song");
+
+		var x = 0;
+		var y = -220;
+
+		var img = gm(640, 640, "#000000")
+			.quality(100)
+			.fill( 'rgb(255, 0, 255)' )
+			.font( magnum ).fontSize(48)
+			.drawText(x, y, title, 'Center')
+			.font( cyberbit ).fontSize(18)
+
+		y += 30;	
+		img.drawText(x, y, "by Jeff Crouse", 'Center');
+		
+		y += 50;
+		img.drawText(x, y, "VIDEOS", 'Center');		
+		y += 30;
+
+		storage.getItemSync("top_videos").forEach(function(video){
+			var line = util.format("%s | %s", video.title, video.source);
+			img.drawText(x, y.toString(), video.title, 'Center');
+			y += 30;
+		});
+
+		y += 50;
+
+		img.drawText(x, y, "MUSIC", 'Center');
+		y += 30;
+
+		var song_credit = util.format('"%s" by %s', song.tags.title, song.tags.artist);
+		img.drawText(x, y, song_credit, 'Center');
+
+
+		img.write(outro_image, function(err){
+			if(err) return done(err);
+			fs.access(outro_image, fs.R_OK | fs.W_OK, done);
+		});
+	});
+};
+
+// -----------------------------------------------------------------
 var make_intro_video = function(done) {
+	console.log("make_intro_video");
 	fs.stat(intro_video, function(err, stat) {
 		if(err==null) return done();
 
@@ -369,36 +476,8 @@ var make_intro_video = function(done) {
 
 
 // -----------------------------------------------------------------
-var make_outro_image = function(done) {
-	var job = storage.getItemSync("job");
-
-	fs.stat(outro_image, function(err, stat) {
-		if(err==null) return done();
-		
-		console.log("======make_outro_image======");
-
-		var song = storage.getItemSync("song");
-		var song_credit = wordwrap(40)(util.format("music: %s by %s", song.title, song.artist));
-		gm(640, 640, "#000000")
-			.quality(100)
-			.fill( 'rgb(255, 0, 255)' )
-			.font( bold )
-		    .fontSize(48)
-			.drawText(0, '-100', title, 'Center')
-			.font( light )
-			.fontSize(24)
-			.drawText(0, '-50', "by Jeff Crouse", 'Center')
-			.drawText(0, '-10', song_credit, 'Center')
-			.write(outro_image, function(err){
-				if(err) return done(err);
-				fs.access(outro_image, fs.R_OK | fs.W_OK, done);
-			});
-	});
-};
-
-// -----------------------------------------------------------------
 var make_outro_video = function(done) {
-
+	console.log("make_outro_video");
 	fs.stat(outro_video, function(err, stat) {
 		if(err==null) return done();
 
@@ -418,6 +497,7 @@ var make_outro_video = function(done) {
 
 // -----------------------------------------------------------------
 function shuffle(array) {
+
   var currentIndex = array.length, temporaryValue, randomIndex ;
 
   // While there remain elements to shuffle...
@@ -447,6 +527,7 @@ var randomRange = function(min, max) {
 
 // -----------------------------------------------------------------
 var make_ffmpeg_command = function(done) {
+	console.log("make_ffmpeg_command");
 	if(storage.getItemSync("ffmpeg")) 
 		return done();
 
@@ -503,6 +584,7 @@ var make_ffmpeg_command = function(done) {
 
 // -----------------------------------------------------------------
 var make_concatted = function(done) {
+	console.log("make_concatted");
 	fs.stat(concatted, function(err, stat) {
 		if(err==null) return done();
 
@@ -520,6 +602,8 @@ var make_concatted = function(done) {
 
 // -----------------------------------------------------------------
 var export_audio = function(done) {
+	console.log("export_audio");
+
 	fs.stat(concatted_audio, function(err, stat){
 		if(err==null) return done();
 
@@ -547,20 +631,18 @@ Math.map = function (value, istart, istop, ostart, ostop, clamp) {
 
 // -----------------------------------------------------------------
 var make_glitch_avi = function(done) {
-	
+	console.log("make_glitch_avi");
 	fs.stat(glitched_avi, function(err, stat) {
 		if(err==null) return done();
 
 		console.log("======make_glitch_avi======");
 
-		var fprob = Math.map(glitch, 0, 1, 0.5, 1);
-		var dprob = Math.map(glitch, 0, 1, 0, 1);
-		var dmin = Math.floor(Math.map(glitch, 0, 1, 0, 10))
-		var dmax = Math.floor(Math.map(glitch, 0, 1, 10, 40))
+		var dprob = Math.map(glitch_factor, 0, 100, 0, 1);
+		var dmin = Math.floor(Math.map(glitch_factor, 0, 100, 0, 10))
+		var dmax = Math.floor(Math.map(glitch_factor, 0, 100, 10, 40))
 
 		var cmd = [
 			"perl", autodatamosh,
-			"-fprob", fprob, 
 			"-dprob", dprob, 
 			"-dmin", dmin, 
 			"-dmax", dmax, 
@@ -580,6 +662,7 @@ var make_glitch_avi = function(done) {
 
 // -----------------------------------------------------------------
 var make_glitch_waudio = function(done) {
+	console.log("make_glitch_waudio");
 	fs.stat(glitched_waudio, function(err, stat) {
 		if(err==null) return done();
 
@@ -599,6 +682,7 @@ var make_glitch_waudio = function(done) {
 
 // -----------------------------------------------------------------
 var make_assembled = function(done) {
+	console.log("make_assembled");
 	fs.stat(assembled, function(err, stat) {
 		if(err==null) return done();
 
@@ -606,6 +690,7 @@ var make_assembled = function(done) {
 
 		var song = storage.getItemSync("song");
 
+		// Kick off the command
 		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', 
 			intro_video, glitched_waudio, outro_video, song.path);
 
@@ -633,9 +718,11 @@ var make_assembled = function(done) {
 		// merge music into mix
 		filters.push('[song][audio_track2]amerge[a]')
 
-		// Make the rest of the command
+		// Add the filters (and the stream outputs) to the command
 		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" ', filters.join(";"));
-		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', levels[5], assembled);
+
+		// Add the output options to the command.
+		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', LEVELS[5], assembled);
 
 		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
@@ -649,9 +736,11 @@ var make_assembled = function(done) {
 
 // -----------------------------------------------------------------
 var move_output = function(done) {
+	console.log("move_output");
 	fs.stat(output, function(err, stat) {
 		if(err==null) return done();
 
+		console.log("======move_output======");
 		fs.rename(assembled, output, done)
 	});
 }
@@ -659,11 +748,13 @@ var move_output = function(done) {
 
 // -----------------------------------------------------------------
 var cleanup = function(done) {
-	rimraf(working_dir, done);
+	console.log("cleanup");
+	//rimraf(working_dir, done);
 }
 
 // -----------------------------------------------------------------
 var tasks = [
+	arguments_check,
 	requirements_check,
 	make_working_dir, 
 	init_persist, 
@@ -671,6 +762,7 @@ var tasks = [
 	search_pornhub, 
 	//search_youporn, 
 	search_redtube, 
+	search_youtube,
 	get_top_videos, 
 	download_videos,
 	get_durations,
