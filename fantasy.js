@@ -7,7 +7,6 @@ var path = require('path');
 var mkdirp = require('mkdirp');
 var exec = require('child_process').exec;
 var spawn = require('child_process').spawn
-var storage = require('node-persist');
 var glob = require("glob")
 var wordwrap = require('wordwrap');
 var gm = require('gm');
@@ -62,6 +61,7 @@ var YOUTUBE_KEY="AIzaSyDa-9oAlMPr-4y9TYwjq0ZytIRUUM8JolM";
 //	INTERMEDIATE FILES
 //
 var working_dir = output.replace(path.extname(output), "_tmp");
+var project_path = path.join(working_dir, "project.json");
 var silence = path.join(working_dir, "silence.mp2");
 var intro_image = path.join(working_dir, "intro.png");
 var intro_video = path.join(working_dir, "intro.avi");
@@ -74,6 +74,17 @@ var glitched_waudio = path.join(working_dir, "glitched_waudio.avi");
 var assembled = path.join(working_dir, "assembled.mp4");
 var soundtrack = path.join(working_dir, "soundtrack.mp4");
 
+
+var default_project = {
+	pornhub_results: null, 
+	youporn_results: null, 
+	redtube_results: null, 
+	youtube_results: null,
+	top_videos: null,
+	song: null,
+	ffmpeg_command: null
+};
+var project = null;
 
 
 //
@@ -89,7 +100,11 @@ var arguments_check = function(done) {
 // ----------------------------------------------------------------
 // ffmpeg with appropriate codecs, fonts, youtube-dl, autodatamosh
 var requirements_check = function(done) {
-	done();
+	async.series([
+	    function(callback){ which('ffmpeg', callback); },
+	    function(callback){ which('convert', callback); },
+	    function(callback){ which('perl', callback); }
+	], done);
 }
 
 // ----------------------------------------------------------------
@@ -99,17 +114,27 @@ var make_working_dir = function(done) {
 }
 
 // ----------------------------------------------------------------
-var init_persist = function(done){
-	console.log("init_persist");
-	var stringify = function(obj){ return JSON.stringify(obj, undefined, 2); };
-	storage.initSync({dir:working_dir, logging: false, stringify: stringify });	
+var open_project = function(done){
+	// fs.access(project_path, fs.R_OK | fs.W_OK, function(err){});
+
+	try {
+		project = require(project_path);
+	} catch(e) {
+		project = default_project;
+	}
+
 	done();
+}
+
+// ----------------------------------------------------------------
+var save_project = function(done) {
+	fs.writeFile(project_path, JSON.stringify(project, null, 4), done); 
 }
 
 // ----------------------------------------------------------------
 var search_pornhub = function(done) {
 	console.log("search_pornhub");
-	if(storage.getItemSync("pornhub")) return done();
+	if( project["pornhub_results"] ) return done();
 
 	var tags = ["teen", "lesbian"];
 	var id = "44bc40f3bc04f65b7a35";
@@ -118,21 +143,22 @@ var search_pornhub = function(done) {
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
-			
-			var json = JSON.parse(body);
-			console.log("pornhub", json.videos.length, "results");
+			try {
+				var json = JSON.parse(body);
+				console.log("pornhub", json.videos.length, "results");
 
-			var search_results = json.videos.map(function(video){
-				return {title: video.title, 
-					url: video.url, 
-					views: parseInt(video.views),
-					id: video.video_id,
-					source: "pornhub" };
-			});
-
-			storage.setItemSync("pornhub", search_results)
-			done();
-
+				project['pornhub_results'] = json.videos.map(function(video){
+					return {title: video.title, 
+						url: video.url, 
+						views: parseInt(video.views),
+						id: video.video_id,
+						source: "pornhub" };
+				});
+				save_project(done);
+	
+			} catch(e) {
+				done(e);
+			}
 		} 
 		else 
 			done("couldn't get search_pornhub results");
@@ -142,7 +168,7 @@ var search_pornhub = function(done) {
 // ----------------------------------------------------------------
 var search_youporn = function(done) {
 	console.log("search_youporn");
-	if(storage.getItemSync("youporn")) return done();
+	if( project["youporn_results"] ) return done();
 
 	var tags = ["teen", "lesbian"];
 	var url = util.format('http://www.youporn.com/api/webmasters/search?search=%s&tags[]=%s', 
@@ -150,19 +176,23 @@ var search_youporn = function(done) {
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
-			var json = JSON.parse(body);
-			console.log("youporn", json.video.length, "results");
+			try {
+				var json = JSON.parse(body);
+				console.log("youporn", json.video.length, "results");
 
-			var search_results = json.video.map(function(video){
-				return {title: video.title, 
-					url: video.url, 
-					views: parseInt(video.views),
-					id: video.video_id,
-					source: "youporn" };
-			});
+				project['youporn_results'] = json.video.map(function(video){
+					return {title: video.title, 
+						url: video.url, 
+						views: parseInt(video.views),
+						id: video.video_id,
+						source: "youporn" };
+				});
 
-			storage.setItemSync("youporn", search_results)
-			done();
+				save_project(done);
+
+			} catch(e) {
+				done(e);
+			}
 		}
 		else 
 			done("couldn't get search_youporn results");
@@ -172,7 +202,7 @@ var search_youporn = function(done) {
 // ----------------------------------------------------------------
 var search_redtube = function(done) {
 	console.log("search_redtube");
-	if(storage.getItemSync("redtube")) return done();
+	if( project["redtube_results"] ) return done();
 
 	var tags = ["teen", "lesbian"];
 	var url = util.format('http://api.redtube.com/?data=redtube.Videos.searchVideos&output=json&search=%s&tags[]=%s', 
@@ -180,19 +210,23 @@ var search_redtube = function(done) {
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
-			var json = JSON.parse(body);
-			console.log("redtube", json.videos.length, "results");
+			try {
+				var json = JSON.parse(body);
+				console.log("redtube", json.videos.length, "results");
 
-			var search_results = json.videos.map(function(video){
-				return {title: video.video.title, 
-					url: video.video.url, 
-					views: parseInt(video.video.views), 
-					id: video.video.video_id,
-					source: "redtube" };
-			});
+				project['redtube_results'] = json.videos.map(function(video){
+					return {title: video.video.title, 
+						url: video.video.url, 
+						views: parseInt(video.video.views), 
+						id: video.video.video_id,
+						source: "redtube" };
+				});
 
-			storage.setItemSync("redtube", search_results);
-			done();
+				save_project(done);
+
+			} catch(e) {
+				done(e);
+			}
 		} 
 		else 
 			done("couldn't get search_redtube results");
@@ -202,7 +236,7 @@ var search_redtube = function(done) {
 // ----------------------------------------------------------------
 var search_youtube = function(done) {
 	console.log("search_youtube");
-	if(storage.getItemSync('youtube')) return done();
+	if( project['youtube_results'] ) return done();
 
 	var url = util.format('https://www.googleapis.com/youtube/v3/search?key=%s&part=snippet&q=%s&maxResults=%s', 
 		YOUTUBE_KEY, youtube_search, nsources);
@@ -210,32 +244,36 @@ var search_youtube = function(done) {
 	request(url, function (error, response, body) {
 		if(error || response.statusCode != 200)
 			return done("couldn't get youtube results");
+		try {
+			var json = JSON.parse(body);
+			console.log("youtube", json.items.length, "results");
+			
+			project['youtube_results'] = json.items.map(function(item){
+				return {
+					title: item.snippet.title,
+					url: util.format('https://www.youtube.com/watch?v=%s', item.id.videoId),
+					id: item.id.videoId,
+					source: "youtube"
+				};
+			});
 
-		var json = JSON.parse(body);
-		console.log("youtube", json.items.length, "results");
-		var search_results = json.items.map(function(item){
-			return {
-				title: item.snippet.title,
-				url: util.format('https://www.youtube.com/watch?v=%s', item.id.videoId),
-				id: item.id.videoId,
-				source: "youtube"
-			};
-		});
+			save_project(done);
 
-		storage.setItemSync("youtube", search_results);
-		done();
+		} catch(e) {
+			done(e);
+		}
 	});
 }
 
 // ----------------------------------------------------------------
 var get_top_videos = function(done) {
 	console.log("get_top_videos");
-	if(storage.getItemSync("top_videos")) return done();	
+	if( project["top_videos"] ) return done();	
 
 	var search_results = [].concat(
-		storage.getItemSync("redtube"), 
-		//storage.getItemSync("youporn"), 
-		storage.getItemSync("pornhub")
+		project["redtube_results"], 
+		project["youporn_results"], 
+		project["pornhub_results"]
 	);
 
 	search_results.sort(function(a,b){
@@ -246,19 +284,17 @@ var get_top_videos = function(done) {
 
 	var top_videos = search_results.slice(0, nsources);
 
-	var youtube = storage.getItemSync("youtube");
-	top_videos = top_videos.concat(youtube);
+	var youtube = project["youtube_results"];
+	project['top_videos'] = top_videos.concat(youtube);
 
-	storage.setItemSync("top_videos", top_videos);
-	done();
+	save_project(done);
 }
 
 // ----------------------------------------------------------------
 var download_videos = function(done){
 	console.log("download_videos");
-	var top_videos = storage.getItemSync("top_videos");
 
-	async.eachSeries(top_videos, function(video, next){
+	async.eachSeries(project['top_videos'], function(video, next){
 		if(video.path) return next(); // TODO: check if videos exist before calling commands
 
 		var download = spawn('youtube-dl', ['-o', util.format('%s/%s.%%(ext)s', working_dir, video.id), video.url]);
@@ -280,8 +316,8 @@ var download_videos = function(done){
 				if(!files.length) return next("couldn't find file");
 
 				video.path =  files[0];
-				storage.setItemSync("top_videos", top_videos);
-				next();
+
+				save_project(next);
 			});
 		});
 
@@ -313,17 +349,16 @@ var get_duration = function(path, callback) {
 // ----------------------------------------------------------------
 var get_durations = function(done) {
 	console.log("get_durations");
-	var top_videos = storage.getItemSync("top_videos");
 
-	async.forEachOfSeries(top_videos, function(video, id, next){
+	async.forEachOfSeries(project['top_videos'], function(video, id, next){
 		if(video.duration) return next();
 
 		get_duration(video.path, function(err, duration){
 			if(err) return next(err);
 
-			top_videos[id].duration = duration;
-			storage.setItemSync("top_videos", top_videos);
-			next();
+			video.duration = duration;
+
+			save_project(next);
 		});
 	}, done);
 }
@@ -332,7 +367,7 @@ var get_durations = function(done) {
 // ----------------------------------------------------------------
 var get_song_info = function(done) {
 	console.log("get_song_info");
-	if(storage.getItemSync("song")) return done();
+	if( project["song"] ) return done();
 
 	var pattern = path.join(__dirname, "music", "*.mp3")
 	glob( pattern, {}, function(err, files){
@@ -346,13 +381,14 @@ var get_song_info = function(done) {
 			if(err) return done(err);
 			console.log(metadata);
 
+			metadata.picture = null;
+
 			get_duration(song_path, function(err, duration){
 				if(err) return done(err);
 
-				var song = {tags: metadata, duration: duration, path: song_path};
+				project["song"] = {tags: metadata, duration: duration, path: song_path};
 		
-				storage.setItemSync("song", song);
-				done();
+				save_project(done);
 			});
 		});
 	});
@@ -377,8 +413,30 @@ var make_silence = function(done){
 	});
 }
 
+
 // -----------------------------------------------------------------
-var make_intro_image = function(done) {
+var gm_to_video = function(img, image_path, video_path, callback) {
+
+	img.write(image_path, function(err){
+		if(err) return callback(err);
+
+		fs.access(image_path, fs.R_OK | fs.W_OK, function(err){
+			if(error) return callback(error);
+
+			var cmd = util.format('ffmpeg -y -loop 1 -i "%s" -r 23.976 -t 15 -vcodec qtrle "%s"', image_path, video_path);
+			cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', image_path, silence, video_path);
+
+			exec(cmd, function(error, stdout, stderr){
+				if(error) return callback(error);
+
+				fs.access(video_path, fs.R_OK | fs.W_OK, callback);
+			});
+		});
+	});
+}
+
+// -----------------------------------------------------------------
+var make_intro = function(done) {
 	console.log("make_intro_image");
 	fs.stat(intro_image, function(err, stat) {
 		if(err==null) return done();
@@ -397,15 +455,13 @@ var make_intro_image = function(done) {
 			.drawText(0, '-10', song.tags.title, 'Center')
 			.drawText(0, '20', "by "+song.tags.artist, 'Center');
 
-		img.write(intro_image, function(err){
-			if(err) return done(err);
-			fs.access(intro_image, fs.R_OK | fs.W_OK, done);
-		});
+		gm_to_video(img, intro_image, intro_video, done);
 	});
 }
 
+
 // -----------------------------------------------------------------
-var make_outro_image = function(done) {
+var make_outro = function(done) {
 	console.log("make_outro_image");
 
 	fs.stat(outro_image, function(err, stat) {
@@ -413,10 +469,10 @@ var make_outro_image = function(done) {
 		
 		console.log("======make_outro_image======");
 
-		var song = storage.getItemSync("song");
+		// var song = storage.getItemSync("song");
 
 		var x = 0;
-		var y = -220;
+		var y = -240;
 
 		var img = gm(640, 640, "#000000")
 			.quality(100)
@@ -436,64 +492,22 @@ var make_outro_image = function(done) {
 			var line = util.format("%s | %s", video.title, video.source);
 			img.drawText(x, y.toString(), video.title, 'Center');
 			y += 30;
+			img.drawText(x, y.toString(), video.url, 'Center');
+			y += 30;
 		});
 
-		y += 50;
+		// y += 40;
 
-		img.drawText(x, y, "MUSIC", 'Center');
-		y += 30;
+		// img.drawText(x, y, "MUSIC", 'Center');
+		// y += 30;
 
-		var song_credit = util.format('"%s" by %s', song.tags.title, song.tags.artist);
-		img.drawText(x, y, song_credit, 'Center');
+		// var song_credit = util.format('"%s" by %s', song.tags.title, song.tags.artist);
+		// img.drawText(x, y, song_credit, 'Center');
 
-
-		img.write(outro_image, function(err){
-			if(err) return done(err);
-			fs.access(outro_image, fs.R_OK | fs.W_OK, done);
-		});
+		gm_to_video(img, outro_image, outro_video, done);
 	});
 };
 
-// -----------------------------------------------------------------
-var make_intro_video = function(done) {
-	console.log("make_intro_video");
-	fs.stat(intro_video, function(err, stat) {
-		if(err==null) return done();
-
-		console.log("======make_intro_video======");
-
-		var cmd = util.format('ffmpeg -loop 1 -i "%s" -t 15 -vf scale=640:640 "%s" ', intro_image, intro_video);
-		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', intro_video, silence, intro_video);
-
-		console.log(cmd);
-		exec(cmd, function(error, stdout, stderr){
-			if(error) return done(error);
-
-			fs.access(intro_video, fs.R_OK | fs.W_OK, done);
-		});
-	});
-}
-
-
-// -----------------------------------------------------------------
-var make_outro_video = function(done) {
-	console.log("make_outro_video");
-	fs.stat(outro_video, function(err, stat) {
-		if(err==null) return done();
-
-		console.log("======make_outro_video======");
-
-		var cmd = util.format('ffmpeg -loop 1 -i "%s" -t 15 -vf scale=640:640 "%s"', outro_image, outro_video);
-		cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', outro_video, silence, outro_video);
-
-		console.log(cmd);
-		exec(cmd, function(error, stdout, stderr){
-			if(error) return done(error);
-
-			fs.access(outro_video, fs.R_OK | fs.W_OK, done);
-		});
-	});
-};
 
 // -----------------------------------------------------------------
 function shuffle(array) {
@@ -528,16 +542,13 @@ var randomRange = function(min, max) {
 // -----------------------------------------------------------------
 var make_ffmpeg_command = function(done) {
 	console.log("make_ffmpeg_command");
-	if(storage.getItemSync("ffmpeg")) 
+	if(project("ffmpeg_command")) 
 		return done();
 
 	console.log("======make_ffmpeg_command======");
 
-	var top_videos = storage.getItemSync("top_videos");
-	var song = storage.getItemSync("song");
-
 	var cmd = util.format('ffmpeg -y ');
-	top_videos.forEach(function(video){
+	project["top_videos"].forEach(function(video){
 		cmd += util.format('-i "%s" ', video.path);
 	});
 
@@ -547,9 +558,9 @@ var make_ffmpeg_command = function(done) {
 
 
 	// Keep adding filters and clips until we reach the song duration
-	while(duration < song.duration-10) {
+	while(duration < project["song"].duration-10) {
 		var i=0;
-		top_videos.forEach(function(video){
+		project["top_videos"].forEach(function(video){
 
 			var start = video.pos ? round2(video.pos) : video.duration/2.0;
 			var t = randomRange(2, 4);			
@@ -577,8 +588,10 @@ var make_ffmpeg_command = function(done) {
 	filters.push(util.format('%sconcat=n=%d:v=1:a=1[v][a]', clips.join(""), clips.length));
 	cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" -c:v mpeg4 -vtag xvid -qscale:v 3 -c:a libmp3lame -qscale:a 4 ', filters.join(";"));
 	cmd += util.format('"%s"', concatted);
-	storage.setItemSync("ffmpeg", cmd);
-	done();
+
+	project['ffmpeg_command'] = cmd;
+
+	save_project(done);
 }
 
 
@@ -757,10 +770,10 @@ var tasks = [
 	arguments_check,
 	requirements_check,
 	make_working_dir, 
-	init_persist, 
+	open_project, 
 	get_song_info,
 	search_pornhub, 
-	//search_youporn, 
+	search_youporn, 
 	search_redtube, 
 	search_youtube,
 	get_top_videos, 
@@ -772,10 +785,8 @@ var tasks = [
 	make_glitch_avi,
 	make_glitch_waudio,
 	make_silence,
-	make_intro_image,
-	make_intro_video,
-	make_outro_image,
-	make_outro_video,
+	make_intro,
+	make_outro,
 	make_assembled,
 	move_output,
 	cleanup,

@@ -13,7 +13,7 @@ create your own personal fantasy porn video from the command line!
 
 # Usage
 
-``./index.js --title "My Fantasy" --porn "teen,threesome" --youtube "galaxy" --num 5 --glitch 50 output/my_fantasy.mp4``
+``./fantasy.js --title "My Fantasy" --porn "teen,threesome" --youtube "galaxy" --num 5 --glitch 50 output/my_fantasy.mp4``
 
 # Note
 

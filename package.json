@@ -16,7 +16,6 @@
     "minimist": "^1.2.0",
     "mkdirp": "^0.5.1",
     "musicmetadata": "^2.0.2",
-    "node-persist": "0.0.6",
     "request": "^2.65.0",
     "rimraf": "^2.4.3",
     "which": "^1.2.0",

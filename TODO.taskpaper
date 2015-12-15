@@ -1,19 +1,8 @@
 ./index.js --title "My Fantasy" --porn "teen, threesome" --youtube "galaxy" --num 5 --glitch 50 output/my_fantasy.mp4
 
 v0.1 RELEASE:
-	- Try multiple times for each search result (?? what does this mean? http failures?)
-	- implement requirements_check 
-	- Use "spawn" instead of "exec" for downloads so that you can see feedback/progress in real-time
 	- Add full setup instructions and requirements in README
-	- Fix unicode characters in song names
-	- Add information about videos in title cards
-	- Either figure out what is wrong with youporn search, or add another site
-	- Use the length of the song (and editing technique) to determine how many videos to download
 	- use https://github.com/bcoe/yargs instead of minimist
-	- intersperse YouTUBE AND porn videos -- right now they are all clumped together
-	- Check for existing project before starting
-	- Look into fri0r filters for additional editing effects
-
 WHEN IT'S TIME TO LAUNCH...:
 	- Tag v0.1 on Github
 	- Launch standalone executable as an NPM module
@@ -29,6 +18,15 @@ PRINCIPLES:
 	- Everything should work for everyone (ie: fallbacks for no search results, friendly error messages, etc)
 
 Archive:
+	- Fix unicode characters in song names @done(2015-12-14) @project(v0.1 RELEASE)
+	- Add information about videos in title cards @done(2015-12-14) @project(v0.1 RELEASE)
+	- Either figure out what is wrong with youporn search, or add another site @done(2015-12-14) @project(v0.1 RELEASE)
+	- Use the length of the song (and editing technique) to determine how many videos to download @done(2015-12-14) @project(v0.1 RELEASE)
+	- intersperse YouTUBE AND porn videos -- right now they are all clumped together @done(2015-12-14) @project(v0.1 RELEASE)
+	- Check for existing project before starting @done(2015-12-14) @project(v0.1 RELEASE)
+	- Try multiple times for each search result (?? what does this mean? http failures?) @done(2015-12-14) @project(v0.1 RELEASE)
+	- implement requirements_check  @done(2015-12-14) @project(v0.1 RELEASE)
+	- Use "spawn" instead of "exec" for downloads so that you can see feedback/progress in real-time @done(2015-12-14) @project(v0.1 RELEASE)
 	- Make sure the editing loop doesn't go beyond the duration of the video @done(2015-11-09) @project(v0.1 RELEASE)
 	- Do all editing as AVI (or some other low-compression format) and only MP4 at the end. @done(2015-11-09) @project(v0.1 RELEASE)
 	-  https://ffmpeg.org/pipermail/ffmpeg-user/2011-July/001718.html @done(2015-11-09) @project(v0.1 RELEASE)
