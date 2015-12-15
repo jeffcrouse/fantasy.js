@@ -106,19 +106,21 @@ var YOUTUBE_KEY="AIzaSyDa-9oAlMPr-4y9TYwjq0ZytIRUUM8JolM";
 //	INTERMEDIATE FILES
 //
 var working_dir = output.replace(path.extname(output), "_tmp");
+var source_dir = path.join(working_dir, "source");
 var project_path = path.join(working_dir, "project.json");
-var silence = path.join(working_dir, "silence.mp2");
 var song_path = path.join(working_dir, "song.mp3");
-var intro_image = path.join(working_dir, "intro.png");
-var intro_video = path.join(working_dir, "intro.avi");
-var outro_image = path.join(working_dir, "outro.png");
-var outro_video = path.join(working_dir, "outro.avi");
-var concatted = path.join(working_dir, "concatted.avi");
-var concatted_audio = path.join(working_dir, "concatted_audio.mp3");
-var glitched_avi = path.join(working_dir, "glitched.avi");
-var glitched_waudio = path.join(working_dir, "glitched_waudio.avi");
-var assembled = path.join(working_dir, "assembled.mp4");
-var soundtrack = path.join(working_dir, "soundtrack.mp4");
+var edit_dir = path.join(working_dir, "edits");
+var silence = path.join(edit_dir, "silence.mp2");
+var intro_image = path.join(edit_dir, "intro.png");
+var intro_video = path.join(edit_dir, "intro.avi");
+var outro_image = path.join(edit_dir, "outro.png");
+var outro_video = path.join(edit_dir, "outro.avi");
+var concatted = path.join(edit_dir, "concatted.avi");
+var concatted_audio = path.join(edit_dir, "concatted_audio.mp3");
+var glitched_avi = path.join(edit_dir, "glitched.avi");
+var glitched_waudio = path.join(edit_dir, "glitched_waudio.avi");
+var assembled = path.join(edit_dir, "assembled.mp4");
+var soundtrack = path.join(edit_dir, "soundtrack.mp4");
 
 
 var default_project = {
@@ -156,7 +158,11 @@ var requirements_check = function(done) {
 // ----------------------------------------------------------------
 var make_working_dir = function(done) {
 	console.log("working_dir", working_dir)
-	mkdirp(working_dir, done);
+	async.series([
+	    function(callback){ mkdirp(source_dir, callback); },
+	    function(callback){ mkdirp(working_dir, callback); },
+	    function(callback){ mkdirp(edit_dir, callback); },
+	], done);
 }
 
 // ----------------------------------------------------------------
@@ -343,7 +349,7 @@ var download_videos = function(done){
 	async.eachSeries(project['top_videos'], function(video, next){
 		if(video.path) return next(); // TODO: check if videos exist before calling commands
 
-		var download = spawn('youtube-dl', ['-o', util.format('%s/%s.%%(ext)s', working_dir, video.id), video.url]);
+		var download = spawn('youtube-dl', ['-o', util.format('%s/%s.%%(ext)s', source_dir, video.id), video.url]);
 
 		download.stdout.on('data', function (data) {
 			console.log('stdout: ' + data);
@@ -356,7 +362,7 @@ var download_videos = function(done){
 		download.on('close', function (code) {
 			console.log('child process exited with code ' + code);
 
-			var pattern = util.format("%s/%s.*", working_dir, video.id);
+			var pattern = util.format("%s/%s.*", source_dir, video.id);
 			glob(pattern, {}, function (err, files) {
 				if(err) return next(err);
 				if(!files.length) return next("couldn't find file");
@@ -485,13 +491,13 @@ var gm_to_video = function(img, image_path, video_path, callback) {
 		if(err) return callback(err);
 
 		fs.access(image_path, fs.R_OK | fs.W_OK, function(err){
-			if(error) return callback(error);
+			if(err) return callback(err);
 
 			var cmd = util.format('ffmpeg -y -loop 1 -i "%s" -r 23.976 -t 15 -vcodec qtrle "%s"', image_path, video_path);
 			cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', image_path, silence, video_path);
 
-			exec(cmd, function(error, stdout, stderr){
-				if(error) return callback(error);
+			exec(cmd, function(err, stdout, stderr){
+				if(err) return callback(err);
 
 				fs.access(video_path, fs.R_OK | fs.W_OK, callback);
 			});
@@ -502,10 +508,8 @@ var gm_to_video = function(img, image_path, video_path, callback) {
 // -----------------------------------------------------------------
 var make_intro = function(done) {
 	console.log("make_intro_image");
-	fs.stat(intro_image, function(err, stat) {
+	fs.stat(intro_video, function(err, stat) {
 		if(err==null) return done();
-
-		var song = storage.getItemSync("song");
 
 		console.log("======make_intro_image======");
 
@@ -516,8 +520,8 @@ var make_intro = function(done) {
 			.drawText(0, '-100', title, 'Center')
 			.font( cyberbit ).fontSize(24)
 			.drawText(0, '-50', "by Jeff Crouse", 'Center')
-			.drawText(0, '-10', song.tags.title, 'Center')
-			.drawText(0, '20', "by "+song.tags.artist, 'Center');
+			.drawText(0, '-10', project.song.info.title, 'Center')
+			.drawText(0, '20', "by "+project.song.info.artist, 'Center');
 
 		gm_to_video(img, intro_image, intro_video, done);
 	});
@@ -528,7 +532,7 @@ var make_intro = function(done) {
 var make_outro = function(done) {
 	console.log("make_outro_image");
 
-	fs.stat(outro_image, function(err, stat) {
+	fs.stat(outro_video, function(err, stat) {
 		if(err==null) return done();
 		
 		console.log("======make_outro_image======");
@@ -552,7 +556,7 @@ var make_outro = function(done) {
 		img.drawText(x, y, "VIDEOS", 'Center');		
 		y += 30;
 
-		storage.getItemSync("top_videos").forEach(function(video){
+		project.top_videos.forEach(function(video){
 			var line = util.format("%s | %s", video.title, video.source);
 			img.drawText(x, y.toString(), video.title, 'Center');
 			y += 30;
@@ -779,8 +783,8 @@ var make_assembled = function(done) {
 		filters.push('[1:a]asetpts=PTS-STARTPTS[a1]');
 		
 		// Add outro video
-		filters.push('[2:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]');
-		filters.push('[2:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a2]');
+		filters.push('[2:v]trim=start=0:end=10,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]');
+		filters.push('[2:a]atrim=start=0:end=10,asetpts=PTS-STARTPTS[a2]');
 
 		// concat all clips
 		filters.push('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][audio_track]');
