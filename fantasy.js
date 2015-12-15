@@ -14,22 +14,67 @@ var mm = require('musicmetadata');
 var fs = require('fs');
 var rimraf = require('rimraf');
 var which = require('which');
-var argv = require('minimist')(process.argv.slice(2));
+var argv = require('yargs')
+    .usage('Usage: $0 <command> [options]')
+    .command('fantasy.js', 'Create a fantasy video mashup')
+    .demand(1)
+    //.example('$0 count -f foo.js', 'count the lines in the given file')
+
+	.option('t', {
+		alias: 'title',
+		demand: false,
+		default: 'My Fantasy',
+		describe: 'Title of the video we are creating',
+		type: 'string'
+	})
+
+	.option('p', {
+		alias: 'porn_search',
+		demand: false,
+		default: 'teacher',
+		describe: 'What term should we use to search for the porn videos',
+		type: 'string'
+	})
+
+	.option('y', {
+		alias: 'youtube_search',
+		demand: false,
+		default: 'fruit',
+		describe: 'What term should we use to search for the porn videos?',
+		type: 'string'
+	})
+
+	.option('n', {
+		alias: 'num_sources',
+		demand: false,
+		default: 4,
+		describe: 'How many porn videos and youtube videos should we get?',
+		type: 'number'
+	})
+
+	.option('g', {
+		alias: 'glitch',
+		demand: false,
+		default: 10,
+		describe: 'How glitchy should the end result be? (0-10)',
+		type: 'number'
+	})
+
+    .help('h')
+    .alias('h', 'help')
+    .epilog('copyright 2015')
+    .argv;
 
 
 
 //
 // COMMAND LINE OPTIONS
 //
-var title = argv.title || "My Fantasy";
-var porn_search = argv.porn || "teacher";
-var youtube_search = argv.youtube || "fruit";
-var nsources=argv.nsources || 4;
-var glitch_factor=argv.glitch||10;
-if(argv._.length<1) {
-	console.error("output file missing.");
-	return process.exit(1);
-}
+var title = argv.title;
+var porn_search = argv.porn_search;
+var youtube_search = argv.youtube_search;
+var nsources = argv.num_sources;
+var glitch_factor=argv.glitch;
 var output = path.resolve(argv._[0]);
 
 
