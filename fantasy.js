@@ -606,7 +606,7 @@ var randomRange = function(min, max) {
 // -----------------------------------------------------------------
 var make_ffmpeg_command = function(done) {
 	console.log("make_ffmpeg_command");
-	if(project("ffmpeg_command")) 
+	if( project.ffmpeg_command ) 
 		return done();
 
 	console.log("======make_ffmpeg_command======");
@@ -622,7 +622,7 @@ var make_ffmpeg_command = function(done) {
 
 
 	// Keep adding filters and clips until we reach the song duration
-	while(duration < project["song"].duration-10) {
+	while(duration < project.song.duration-10) {
 		var i=0;
 		project["top_videos"].forEach(function(video){
 
@@ -653,7 +653,7 @@ var make_ffmpeg_command = function(done) {
 	cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" -c:v mpeg4 -vtag xvid -qscale:v 3 -c:a libmp3lame -qscale:a 4 ', filters.join(";"));
 	cmd += util.format('"%s"', concatted);
 
-	project['ffmpeg_command'] = cmd;
+	project.ffmpeg_command = cmd;
 
 	save_project(done);
 }
@@ -667,9 +667,8 @@ var make_concatted = function(done) {
 
 		console.log("======make_concatted======");
 
-		var cmd = storage.getItemSync("ffmpeg");
-		console.log(cmd);
-		exec(cmd, function(error, stdout, stderr){
+		console.log(project.ffmpeg_command);
+		exec(project.ffmpeg_command, function(error, stdout, stderr){
 			if(error) return done(error);
 
 			fs.access(concatted, fs.R_OK | fs.W_OK, done);
@@ -765,11 +764,9 @@ var make_assembled = function(done) {
 
 		console.log("======make_assembled======");
 
-		var song = storage.getItemSync("song");
-
 		// Kick off the command
 		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', 
-			intro_video, glitched_waudio, outro_video, song.path);
+			intro_video, glitched_waudio, outro_video, song_path);
 
 		var filters = [];
 
