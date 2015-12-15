@@ -11,6 +11,7 @@ var glob = require("glob")
 var wordwrap = require('wordwrap');
 var gm = require('gm');
 var mm = require('musicmetadata');
+var http = require('http');
 var fs = require('fs');
 var rimraf = require('rimraf');
 var which = require('which');
@@ -19,7 +20,6 @@ var argv = require('yargs')
     .command('fantasy.js', 'Create a fantasy video mashup')
     .demand(1)
     //.example('$0 count -f foo.js', 'count the lines in the given file')
-
 	.option('t', {
 		alias: 'title',
 		demand: false,
@@ -27,7 +27,12 @@ var argv = require('yargs')
 		describe: 'Title of the video we are creating',
 		type: 'string'
 	})
-
+	.option('s', {
+		alias: 'song',
+		demand: true,
+		describe: 'Song to be used in the background',
+		type: 'string'
+	})
 	.option('p', {
 		alias: 'porn_search',
 		demand: false,
@@ -35,7 +40,6 @@ var argv = require('yargs')
 		describe: 'What term should we use to search for the porn videos',
 		type: 'string'
 	})
-
 	.option('y', {
 		alias: 'youtube_search',
 		demand: false,
@@ -43,7 +47,6 @@ var argv = require('yargs')
 		describe: 'What term should we use to search for the porn videos?',
 		type: 'string'
 	})
-
 	.option('n', {
 		alias: 'num_sources',
 		demand: false,
@@ -51,15 +54,13 @@ var argv = require('yargs')
 		describe: 'How many porn videos and youtube videos should we get?',
 		type: 'number'
 	})
-
 	.option('g', {
 		alias: 'glitch',
 		demand: false,
 		default: 10,
-		describe: 'How glitchy should the end result be? (0-10)',
+		describe: 'How glitchy should the end result be? (0-100)',
 		type: 'number'
 	})
-
     .help('h')
     .alias('h', 'help')
     .epilog('copyright 2015')
@@ -74,10 +75,9 @@ var title = argv.title;
 var porn_search = argv.porn_search;
 var youtube_search = argv.youtube_search;
 var nsources = argv.num_sources;
-var glitch_factor=argv.glitch;
+var glitch_factor = argv.glitch;
 var output = path.resolve(argv._[0]);
-
-
+var song_url = argv.song;
 
 if(nsources > 10 || nsources < 2) {
 	console.warn("nsources shoudl be between 2 and 10. Setting it to 4");
@@ -108,6 +108,7 @@ var YOUTUBE_KEY="AIzaSyDa-9oAlMPr-4y9TYwjq0ZytIRUUM8JolM";
 var working_dir = output.replace(path.extname(output), "_tmp");
 var project_path = path.join(working_dir, "project.json");
 var silence = path.join(working_dir, "silence.mp2");
+var song_path = path.join(working_dir, "song.mp3");
 var intro_image = path.join(working_dir, "intro.png");
 var intro_video = path.join(working_dir, "intro.avi");
 var outro_image = path.join(working_dir, "outro.png");
@@ -126,7 +127,7 @@ var default_project = {
 	redtube_results: null, 
 	youtube_results: null,
 	top_videos: null,
-	song: null,
+	song: {info: null, duration: null},
 	ffmpeg_command: null
 };
 var project = null;
@@ -369,7 +370,6 @@ var download_videos = function(done){
 	}, done);
 }
 
-
 // ---------------------------------------------------------------- 
 var get_duration = function(path, callback) {
 	var cmd = util.format('ffprobe -i "%s"', path);
@@ -390,9 +390,8 @@ var get_duration = function(path, callback) {
 	});
 }
 
-
 // ----------------------------------------------------------------
-var get_durations = function(done) {
+var get_video_durations = function(done) {
 	console.log("get_durations");
 
 	async.forEachOfSeries(project['top_videos'], function(video, id, next){
@@ -402,40 +401,60 @@ var get_durations = function(done) {
 			if(err) return next(err);
 
 			video.duration = duration;
-
 			save_project(next);
 		});
 	}, done);
 }
 
+// ----------------------------------------------------------------
+var download = function(url, dest, cb) {
+	console.log("download", url, dest);
+	var file = fs.createWriteStream(dest);
+	var request = http.get(url, function(response) {
+		response.pipe(file);
+		file.on('finish', function() {
+			file.close(cb);
+		});
+	});
+}
+
+// ----------------------------------------------------------------
+var download_song = function(done) {
+	console.log("download_song", song_url);
+
+	fs.access(song_path, fs.R_OK | fs.W_OK, function(err){
+		if(err) download(song_url, song_path, done);
+		else done();
+	});
+}
+
+// ----------------------------------------------------------------
+var get_song_duration = function(done) {
+	console.log("get_song_duration");
+	if( project.song.duration ) return done();
+
+	get_duration(song_path, function(err, duration){
+		if(err) return done(err);
+
+		project.song.duration  = duration;
+		save_project(done);
+	});
+}
 
 // ----------------------------------------------------------------
 var get_song_info = function(done) {
 	console.log("get_song_info");
-	if( project["song"] ) return done();
+	if( project.song.info ) return done();
 
-	var pattern = path.join(__dirname, "music", "*.mp3")
-	glob( pattern, {}, function(err, files){
-		if(err) return done("Error picking song");
+	var parser = mm(fs.createReadStream(song_path), function (err, metadata) {
 
-		var n = Math.floor(Math.random()*files.length);
-		var song_path = files[n];	
+		if(err) return done(err);
 
-		var parser = mm(fs.createReadStream(song_path), function (err, metadata) {
+		metadata.picture = null;
+		console.log(metadata);
 
-			if(err) return done(err);
-			console.log(metadata);
-
-			metadata.picture = null;
-
-			get_duration(song_path, function(err, duration){
-				if(err) return done(err);
-
-				project["song"] = {tags: metadata, duration: duration, path: song_path};
-		
-				save_project(done);
-			});
-		});
+		project.song.info = metadata;
+		save_project(done);
 	});
 }
 
@@ -816,6 +835,8 @@ var tasks = [
 	requirements_check,
 	make_working_dir, 
 	open_project, 
+	download_song,
+	get_song_duration,
 	get_song_info,
 	search_pornhub, 
 	search_youporn, 
@@ -823,7 +844,7 @@ var tasks = [
 	search_youtube,
 	get_top_videos, 
 	download_videos,
-	get_durations,
+	get_video_durations,
 	make_ffmpeg_command,
 	make_concatted,
 	export_audio,

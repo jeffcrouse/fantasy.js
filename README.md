@@ -11,7 +11,7 @@ create your own personal fantasy porn video from the command line!
 ## Usage 
 *commands used on fantasyjs.tumblr.com*
 
-- ``./fantasy.js --title "Galaxy Quest" --porn_search "teen, amateur" --youtube_search "galaxy" -n 3 --glitch 10 output/galaxy_quest.mp4``
+- ``./fantasy.js --song "http://jcrouse.s3.amazonaws.com/music/11%20TUSCANY%20NEO%20SPA.mp3" --title "Galaxy Quest" --porn_search "teen, amateur" --youtube_search "galaxy" -n 3 --glitch 10 output/galaxy_quest.mp4``
 
 ## Issues
 
