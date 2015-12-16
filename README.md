@@ -36,6 +36,8 @@ Pretty pretty please post any problems you have in issues! I will try to fix it 
 ### v0.2 
 - Make a grid of videos instead of sequential editing -- but keep old editing styles. command line option for editing style.
 - Sorting videos by views results in 100% porn results from pornhub. Is this a problem? Should we force results from all sites?
+- Make an interactive process for inputting parameters (make it default, but full command-line mode should remain available). Write them all to project file. Allow restarting at any time.
+- use curl do download mp3
 
 ### Someday/Maybe
 - Launch standalone executable as an NPM module, ``sudo npm install -g fantasy.js``

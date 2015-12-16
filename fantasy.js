@@ -79,7 +79,7 @@ var glitch_factor = argv.glitch;
 var output = path.resolve(argv._[0]);
 var song_url = argv.song;
 
-if(nsources > 10 || nsources < 2) {
+if(nsources < 2 || nsources > 10) {
 	console.warn("nsources shoudl be between 2 and 10. Setting it to 4");
 	nsources = 4;
 }
@@ -93,13 +93,12 @@ if(glitch_factor < 10 || glitch_factor > 100) {
 //
 //	CONFIG
 //
-
 var cyberbit = path.join(__dirname, "fonts", "Cyberbit.ttf");
 var magnum = path.join(__dirname, "fonts", "MAGNUM.TTF");
-
 var autodatamosh = path.join(__dirname, "bin", "autodatamosh.pl");
 var LEVELS="ultrafast superfast veryfast faster fast medium slow slower veryslow".split(" "); // for FFMPEG
 var YOUTUBE_KEY="AIzaSyDa-9oAlMPr-4y9TYwjq0ZytIRUUM8JolM";
+
 
 
 //
@@ -135,6 +134,9 @@ var default_project = {
 var project = null;
 
 
+
+
+
 //
 //	FUNCTIONS
 //
@@ -167,14 +169,11 @@ var make_working_dir = function(done) {
 
 // ----------------------------------------------------------------
 var open_project = function(done){
-	// fs.access(project_path, fs.R_OK | fs.W_OK, function(err){});
-
 	try {
 		project = require(project_path);
 	} catch(e) {
 		project = default_project;
 	}
-
 	done();
 }
 
@@ -192,6 +191,7 @@ var search_pornhub = function(done) {
 	var id = "44bc40f3bc04f65b7a35";
 	var url = util.format('http://www.pornhub.com/webmasters/search?id=%s&search=%s&tags[]=%s', 
 		id, porn_search, tags.join(","));
+	
 	console.log(url);
 	request(url, function (error, response, body) {
 		if (!error && response.statusCode == 200) {
@@ -442,7 +442,7 @@ var get_song_duration = function(done) {
 	get_duration(song_path, function(err, duration){
 		if(err) return done(err);
 
-		project.song.duration  = duration;
+		project.song.duration = duration;
 		save_project(done);
 	});
 }
@@ -470,8 +470,8 @@ var make_silence = function(done){
 	fs.stat(silence, function(err, stat) {
 		if(err==null) return done();
 
-		var cmd = 'ffmpeg -ar 48000 -t 15 -f s16le -acodec pcm_s16le -i /dev/zero -ab 64K -f mp2 ';
-		cmd += util.format('-acodec mp2 -y "%s"', silence);
+		var cmd = 'ffmpeg -ar 48000 -t 15 -f s16le -acodec pcm_s16le -i /dev/zero ';
+		cmd += util.format('-ab 64K -f mp2 -acodec mp2 -y "%s"', silence);
 
 		console.log("======make_silence======");
 		console.log(cmd);
@@ -537,40 +537,30 @@ var make_outro = function(done) {
 		
 		console.log("======make_outro_image======");
 
-		// var song = storage.getItemSync("song");
-
 		var x = 0;
 		var y = -240;
 
 		var img = gm(640, 640, "#000000")
 			.quality(100)
-			.fill( 'rgb(255, 0, 255)' )
-			.font( magnum ).fontSize(48)
+			.fill( 'rgb(255, 0, 255)' );
+		
+		img.font( magnum ).fontSize(48)
 			.drawText(x, y, title, 'Center')
-			.font( cyberbit ).fontSize(18)
+			.font( cyberbit ).fontSize(18);
 
 		y += 30;	
 		img.drawText(x, y, "by Jeff Crouse", 'Center');
 		
 		y += 50;
 		img.drawText(x, y, "VIDEOS", 'Center');		
-		y += 30;
 
 		project.top_videos.forEach(function(video){
-			var line = util.format("%s | %s", video.title, video.source);
+			y += 30;
 			img.drawText(x, y.toString(), video.title, 'Center');
+
 			y += 30;
 			img.drawText(x, y.toString(), video.url, 'Center');
-			y += 30;
 		});
-
-		// y += 40;
-
-		// img.drawText(x, y, "MUSIC", 'Center');
-		// y += 30;
-
-		// var song_credit = util.format('"%s" by %s', song.tags.title, song.tags.artist);
-		// img.drawText(x, y, song_credit, 'Center');
 
 		gm_to_video(img, outro_image, outro_video, done);
 	});
@@ -615,15 +605,9 @@ var make_ffmpeg_command = function(done) {
 
 	console.log("======make_ffmpeg_command======");
 
-	var cmd = util.format('ffmpeg -y ');
-	project["top_videos"].forEach(function(video){
-		cmd += util.format('-i "%s" ', video.path);
-	});
-
 	var filters = [];	// the "trim" filters tha create the clips
 	var clips = [];		// The pads that get passed to the "concat" filter at the end
 	var duration = 0;	// The cumulative duration of the clips that have been added
-
 
 	// Keep adding filters and clips until we reach the song duration
 	while(duration < project.song.duration-10) {
@@ -654,8 +638,13 @@ var make_ffmpeg_command = function(done) {
 	}
 
 	filters.push(util.format('%sconcat=n=%d:v=1:a=1[v][a]', clips.join(""), clips.length));
-	cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" -c:v mpeg4 -vtag xvid -qscale:v 3 -c:a libmp3lame -qscale:a 4 ', filters.join(";"));
-	cmd += util.format('"%s"', concatted);
+
+	var cmd = util.format('ffmpeg -y ');
+	project["top_videos"].forEach(function(video){
+		cmd += util.format('-i "%s" ', video.path);
+	});
+	cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" ', filters.join(";"));
+	cmd += util.format('-c:v mpeg4 -vtag xvid -qscale:v 3 -c:a libmp3lame -qscale:a 4 "%s"', concatted);
 
 	project.ffmpeg_command = cmd;
 
