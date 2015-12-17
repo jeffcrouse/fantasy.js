@@ -614,7 +614,6 @@ var make_outro = function(done) {
 
 
 // -----------------------------------------------------------------
-// TODO: Why is this exporting to MP4?
 var make_ffmpeg_command = function(done) {
 	if( PROJECT.ffmpeg_command ) 
 		return done();
