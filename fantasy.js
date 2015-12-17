@@ -169,11 +169,28 @@ var create_project = function(done) {
 	var validate_glitch = function( value ) {
 		return true;
 	}
-	var validate_url = function(value) {
-		return true;
-	}
-	var glitch_options = [ "Destroyed", "Heavy", "Medium", "None" ];
 
+	var glitch_options = [ "Destroyed", "Heavy", "Medium", "None" ];
+	var songs = [
+		"http://jcrouse.s3.amazonaws.com/music/02%20BX-88%20Space%20Yacht.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/03%20Inner%20Animal.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/04%20After%20Party.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/04%20Promethazine.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/04%20Super%20Gran%20Turismo%20(LUST%20Remix).mp3",
+		"http://jcrouse.s3.amazonaws.com/music/05%20Drive%20Me%20Wide.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/06%20Tingri.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/09%20When%20The%20Past%20Was%20Present%20(Original%20Mix).mp3",
+		"http://jcrouse.s3.amazonaws.com/music/10%20Lucky%20Tomato.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/11%20TUSCANY%20NEO%20SPA.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/14%20HOTEL%20TAIWAN%20WELCOMES%20U.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/24%20Yellowhead.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/BUBBLEGUM.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/Can't%20Afford.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/Channel%20Surfing.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/Landscape.mp3",
+		"http://jcrouse.s3.amazonaws.com/music/Select.mp3"
+	];
+	var default_output = path.join(process.cwd(), "output");
 	var questions = [
 		{type: "input", name: "title", message: "Enter a title for your fantasy", default: "My Fantasy"},
 		{type: "input", name: "author", message: "Who are you?", default: "Anonymous"},
@@ -182,8 +199,8 @@ var create_project = function(done) {
 		{type: "input", name: "youtube_search", message: "Enter search terms for youtube videos", default: "outer space"},
 		{type: "input", name: "num_youtube", message: "How many youtube videos to use?", default: 2, validate: validate_number, filter: Number},
 		{type: "list",  name: "glitch_factor", message: "How glitchy?", choices: glitch_options, filter: function( val ) { return val.toLowerCase(); }},
-		{type: "input", name: "song_url", message: "Enter the URL of an MP3 for background music", default: "http://jcrouse.s3.amazonaws.com/music/05%20Drive%20Me%20Wide.mp3", validate: validate_url},
-		{type: "input", name: "output_name", message: "Enter a filename for your fantasy (without ext)", default: "output"},
+		{type: "list", name: "song_url", message: "Background music",  choices: songs },
+		{type: "input", name: "output_name", message: "Enter a filename for your fantasy (without ext)", default: default_output},
 		{type: "confirm", name: "cleanup", message: "Delete temp files when done?", default: false },
 	];
 
