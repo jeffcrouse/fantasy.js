@@ -701,6 +701,7 @@ var export_audio = function(done) {
 
 
 // -----------------------------------------------------------------
+// TODO: map PROJECT.glitch_factor to an actual 0-100 number
 var make_glitch_avi = function(done) {
 	console.log("make_glitch_avi");
 	fs.stat(glitched_avi, function(err, stat) {

@@ -11,11 +11,7 @@ create your own personal fantasy porn video from the command line!
 ## Usage 
 *commands used on fantasyjs.tumblr.com*
 
-- ``./fantasy.js --song "http://jcrouse.s3.amazonaws.com/music/11%20TUSCANY%20NEO%20SPA.mp3" --title "Galaxy Quest" --porn_search "teen, amateur" --youtube_search "galaxy" -n 3 --glitch 10 "output/galaxy_quest.mp4"``
-- ``./fantasy.js --song "http://jcrouse.s3.amazonaws.com/music/11%20TUSCANY%20NEO%20SPA.mp3" --title "Snow Globe" --porn_search "voyeur" --youtube_search "snow globe" -n 3 --glitch 10 "output/snow_globe.mp4"``
-- ``./fantasy.js --song "http://s3.amazonaws.com/jcrouse/music/Can%27t+Afford.mp3" --title "Coral Reef" --porn_search "voyeur" --youtube_search "Under the Sea" -n 4 --glitch 80 "output/sea.mp4"``
-
-
+``./fantasy.js path/to/workspace``
 
 ## Issues
 
@@ -27,7 +23,6 @@ Pretty pretty please post any problems you have in issues! I will try to fix it 
 - Persist all steps for quick pick-up on error
 - Everything should work for everyone (ie: fallbacks for no search results, friendly error messages, etc)
 
-
 ## To Do
 
 ### v0.1
@@ -36,7 +31,6 @@ Pretty pretty please post any problems you have in issues! I will try to fix it 
 ### v0.2 
 - Make a grid of videos instead of sequential editing -- but keep old editing styles. command line option for editing style. (https://trac.ffmpeg.org/wiki/Create%20a%20mosaic%20out%20of%20several%20input%20videos)
 - Sorting videos by views results in 100% porn results from pornhub. Is this a problem? Should we force results from all sites?
-- Make an interactive process for inputting parameters (make it default, but full command-line mode should remain available). Write them all to project file. Allow restarting at any time.
 - use curl do download mp3
 
 ### Someday/Maybe
