@@ -12,7 +12,7 @@ var wordwrap = require('wordwrap');
 var gm = require('gm');
 var mm = require('musicmetadata');
 var http = require('http');
-var fs = require('fs');
+var fs = require('fs-extra');
 var rimraf = require('rimraf');
 var which = require('which');
 var argv = require('yargs')
@@ -84,8 +84,8 @@ if(nsources < 2 || nsources > 10) {
 	nsources = 4;
 }
 
-if(glitch_factor < 10 || glitch_factor > 100) {
-	console.warn("glitch shoudl be between 10 and 100. Setting it to 50");
+if(glitch_factor < 0 || glitch_factor > 100) {
+	console.warn("glitch shoudl be between 0 and 100. Setting it to 50");
 	glitch_factor = 50;
 }
 
@@ -119,7 +119,7 @@ var concatted_audio = path.join(edit_dir, "concatted_audio.mp3");
 var glitched_avi = path.join(edit_dir, "glitched.avi");
 var glitched_waudio = path.join(edit_dir, "glitched_waudio.avi");
 var assembled = path.join(edit_dir, "assembled.mp4");
-var soundtrack = path.join(edit_dir, "soundtrack.mp4");
+var with_music = path.join(edit_dir, "with_music.mp4");
 
 
 var default_project = {
@@ -161,9 +161,9 @@ var requirements_check = function(done) {
 var make_working_dir = function(done) {
 	console.log("working_dir", working_dir)
 	async.series([
-	    function(callback){ mkdirp(source_dir, callback); },
-	    function(callback){ mkdirp(working_dir, callback); },
-	    function(callback){ mkdirp(edit_dir, callback); },
+	    function(callback){ fs.ensureDir(source_dir, callback); },
+	    function(callback){ fs.ensureDir(working_dir, callback); },
+	    function(callback){ fs.ensureDir(edit_dir, callback); },
 	], done);
 }
 
@@ -610,7 +610,7 @@ var make_ffmpeg_command = function(done) {
 	var duration = 0;	// The cumulative duration of the clips that have been added
 
 	// Keep adding filters and clips until we reach the song duration
-	while(duration < project.song.duration-10) {
+	while(duration < project.song.duration-5) {
 		var i=0;
 		project["top_videos"].forEach(function(video){
 
@@ -758,8 +758,8 @@ var make_assembled = function(done) {
 		console.log("======make_assembled======");
 
 		// Kick off the command
-		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" -i "%s" ', 
-			intro_video, glitched_waudio, outro_video, song_path);
+		var cmd = util.format('ffmpeg -i "%s" -i "%s" -i "%s" ', 
+			intro_video, glitched_waudio, outro_video);
 
 		var filters = [];
 
@@ -776,20 +776,14 @@ var make_assembled = function(done) {
 		filters.push('[2:a]atrim=start=0:end=10,asetpts=PTS-STARTPTS[a2]');
 
 		// concat all clips
-		filters.push('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][audio_track]');
-
-		// adjust audio levels and formats of audio tracks
-		filters.push('[audio_track]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=1.5[audio_track2]')
-		filters.push('[3:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0.5[song]');
-
-		// merge music into mix
-		filters.push('[song][audio_track2]amerge[a]')
+		filters.push('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]');
 
 		// Add the filters (and the stream outputs) to the command
+		// Add the output options to the command.
 		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" ', filters.join(";"));
 
 		// Add the output options to the command.
-		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', LEVELS[5], assembled);
+		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', LEVELS[8], assembled);
 
 		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
@@ -802,13 +796,46 @@ var make_assembled = function(done) {
 
 
 // -----------------------------------------------------------------
+var add_music = function(done) {
+	console.log("add_music");
+	fs.stat(with_music, function(err, stat) {
+		if(err==null) return done();
+
+		var cmd = util.format('ffmpeg -i "%s" -i "%s" ', assembled, song_path);
+
+		var filters = [];
+
+		// adjust audio levels and formats of audio tracks
+		filters.push('[0:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=1.5[audio]')
+		filters.push('[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0.5[song]');
+
+		// merge music into mix
+		filters.push('[song][audio]amerge,pan=stereo:c0<c0+c2:c1<c1+c3[a]')
+
+		// Use the original video witht he modified audio
+		cmd += util.format('-filter_complex "%s" -map 0:v -map "[a]" ', filters.join(";"));
+
+		// Add the output options to the command.
+		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', LEVELS[5], with_music);
+
+		console.log(cmd);
+		exec(cmd, function(error, stdout, stderr){
+			if(error) return done(error);
+			
+			fs.access(with_music, fs.R_OK | fs.W_OK, done);
+		});
+	});
+}
+
+
+// -----------------------------------------------------------------
 var move_output = function(done) {
 	console.log("move_output");
 	fs.stat(output, function(err, stat) {
 		if(err==null) return done();
 
 		console.log("======move_output======");
-		fs.rename(assembled, output, done)
+		fs.copy(with_music, output, done)
 	});
 }
 
@@ -844,6 +871,7 @@ var tasks = [
 	make_intro,
 	make_outro,
 	make_assembled,
+	add_music,
 	move_output,
 	cleanup,
 ];

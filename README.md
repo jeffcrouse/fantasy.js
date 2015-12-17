@@ -34,7 +34,7 @@ Pretty pretty please post any problems you have in issues! I will try to fix it 
 - Add full setup instructions and requirements in README
 
 ### v0.2 
-- Make a grid of videos instead of sequential editing -- but keep old editing styles. command line option for editing style.
+- Make a grid of videos instead of sequential editing -- but keep old editing styles. command line option for editing style. (https://trac.ffmpeg.org/wiki/Create%20a%20mosaic%20out%20of%20several%20input%20videos)
 - Sorting videos by views results in 100% porn results from pornhub. Is this a problem? Should we force results from all sites?
 - Make an interactive process for inputting parameters (make it default, but full command-line mode should remain available). Write them all to project file. Allow restarting at any time.
 - use curl do download mp3
