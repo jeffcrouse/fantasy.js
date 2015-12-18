@@ -39,6 +39,7 @@ var PROJECT_PATH = path.join(WORKING_DIR, "project.json");
 var PROJECT = null;
 
 var song_path = path.join(WORKING_DIR, "song.mp3");
+var source_dir = path.join(WORKING_DIR, "source");
 var edit_dir = path.join(WORKING_DIR, "edits");
 var silence = path.join(edit_dir, "silence.mp2");
 var intro_image = path.join(edit_dir, "intro.png");
@@ -49,7 +50,7 @@ var concatted = path.join(edit_dir, "concatted.avi");
 var concatted_audio = path.join(edit_dir, "concatted_audio.mp3");
 var glitched_avi = path.join(edit_dir, "glitched.avi");
 var glitched_waudio = path.join(edit_dir, "glitched_waudio.avi");
-var assembled = path.join(edit_dir, "assembled.mp4");
+var assembled = path.join(edit_dir, "assembled.avi");
 var with_music = path.join(edit_dir, "with_music.mp4");
 
 
@@ -95,6 +96,13 @@ function shuffle(array) {
 
 
 
+var requirements_check = function(done) {
+	async.series([
+	    function(callback){ which('ffmpeg', callback); },
+	    function(callback){ which('convert', callback); },
+	    function(callback){ which('perl', callback); }
+	], done);
+}
 
 
 
@@ -104,6 +112,8 @@ var load_project = function(done) {
 
 	// What is working_dir?
 	fs.lstat(WORKING_DIR, function(err, stats){
+
+		// Directory doesn't exist! Let's make a project
 		if(err) return create_project(done);
 
 		console.log("========== load_project");
@@ -111,8 +121,9 @@ var load_project = function(done) {
 		// Is it a directory?
 		if(stats.isDirectory()) {
 			fs.readdir(WORKING_DIR, function(err, files){
+				// Is it empty? If so, let's make a project!
 				if(files.length==0) return create_project(done);
-				 validate_project(done);
+				else validate_project(done);
 			});
 		} else {
 			done("please provide a working directory")
@@ -204,7 +215,11 @@ var create_project = function(done) {
 		{type: "confirm", name: "cleanup", message: "Delete temp files when done?", default: false },
 	];
 
-	fs.ensureDir(WORKING_DIR, function (err) {
+	async.series([
+		function(callback){ fs.ensureDir(WORKING_DIR, callback); },
+	    function(callback){ fs.ensureDir(source_dir, callback); },
+	    function(callback){ fs.ensureDir(edit_dir, callback); },
+	], function(err){
 		if(err) return done("Couldn't make project directory");
 
 		inquirer.prompt(questions, function( answers ) {
@@ -285,6 +300,8 @@ var search_pornhub = function(done) {
 		if (!error && response.statusCode == 200) {
 			try {
 				var json = JSON.parse(body);
+				if(!json.videos) return done();
+
 				console.log("pornhub", json.videos.length, "results");
 
 				PROJECT['pornhub_results'] = json.videos.map(function(video){
@@ -320,6 +337,8 @@ var search_youporn = function(done) {
 		if (!error && response.statusCode == 200) {
 			try {
 				var json = JSON.parse(body);
+				if(!json.videos) return done();
+
 				console.log("youporn", json.video.length, "results");
 
 				PROJECT['youporn_results'] = json.video.map(function(video){
@@ -354,6 +373,8 @@ var search_redtube = function(done) {
 		if (!error && response.statusCode == 200) {
 			try {
 				var json = JSON.parse(body);
+				if(!json.videos) return done();
+
 				console.log("redtube", json.videos.length, "results");
 
 				PROJECT['redtube_results'] = json.videos.map(function(video){
@@ -437,37 +458,34 @@ var get_top_videos = function(done) {
 var download_videos = function(done){
 	console.log("download_videos");
 
-	var source_dir = path.join(WORKING_DIR, "sources");
-	fs.ensureDir(source_dir, function(err){
-		async.eachSeries(PROJECT.top_videos, function(video, next){
-			if(video.path) return next(); // TODO: check if videos exist before calling commands
+	async.eachSeries(PROJECT.top_videos, function(video, next){
+		if(video.path) return next(); // TODO: check if videos exist before calling commands
 
-			var download = spawn('youtube-dl', ['-o', util.format('%s/%s.%%(ext)s', source_dir, video.id), video.url]);
+		var download = spawn('youtube-dl', ['-o', util.format('%s/%s.%%(ext)s', source_dir, video.id), video.url]);
 
-			download.stdout.on('data', function (data) {
-				console.log('stdout: ' + data);
+		download.stdout.on('data', function (data) {
+			console.log('stdout: ' + data);
+		});
+
+		download.stderr.on('data', function (data) {
+			console.log('stderr: ' + data);
+		});
+
+		download.on('close', function (code) {
+			console.log('child process exited with code ' + code);
+
+			var pattern = util.format("%s/%s.*", source_dir, video.id);
+			glob(pattern, {}, function (err, files) {
+				if(err) return next(err);
+				if(!files.length) return next("couldn't find file");
+
+				video.path =  files[0];
+
+				save_project(next);
 			});
+		});
 
-			download.stderr.on('data', function (data) {
-				console.log('stderr: ' + data);
-			});
-
-			download.on('close', function (code) {
-				console.log('child process exited with code ' + code);
-
-				var pattern = util.format("%s/%s.*", source_dir, video.id);
-				glob(pattern, {}, function (err, files) {
-					if(err) return next(err);
-					if(!files.length) return next("couldn't find file");
-
-					video.path =  files[0];
-
-					save_project(next);
-				});
-			});
-
-		}, done);
-	});
+	}, done);
 }
 
 // ---------------------------------------------------------------- 
@@ -539,8 +557,9 @@ var gm_to_video = function(img, image_path, video_path, callback) {
 		fs.access(image_path, fs.R_OK | fs.W_OK, function(err){
 			if(err) return callback(err);
 
-			var cmd = util.format('ffmpeg -y -loop 1 -i "%s" -r 23.976 -t 15 -vcodec qtrle "%s"', image_path, video_path);
-			cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" "%s"', image_path, silence, video_path);
+			var cmd = util.format('ffmpeg -y -loop 1 -i "%s" -r 24 -t 100 -vcodec qtrle "%s" ', image_path, video_path);
+			cmd += util.format('&& ffmpeg -y -i "%s" -i "%s" -shortest "%s"', image_path, silence, video_path);
+			//cmd += util.format('&& ffmpeg -y -i "%s" -filter_complex "aevalsrc=sin(750*2*PI*t)[a]" -map 0:v -map "[a]" -shortest "%s"', video_path, video_path);
 
 			exec(cmd, function(err, stdout, stderr){
 				if(err) return callback(err);
@@ -772,8 +791,8 @@ var make_assembled = function(done) {
 		filters.push('[1:a]asetpts=PTS-STARTPTS[a1]');
 		
 		// Add outro video
-		filters.push('[2:v]trim=start=0:end=10,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]');
-		filters.push('[2:a]atrim=start=0:end=10,asetpts=PTS-STARTPTS[a2]');
+		filters.push('[2:v]trim=start=0:end=5,scale=640:640,setpts=PTS-STARTPTS,setsar=sar=1[v2]');
+		filters.push('[2:a]atrim=start=0:end=5,asetpts=PTS-STARTPTS[a2]');
 
 		// concat all clips
 		filters.push('[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]');
@@ -783,7 +802,8 @@ var make_assembled = function(done) {
 		cmd += util.format('-filter_complex "%s" -map "[v]" -map "[a]" ', filters.join(";"));
 
 		// Add the output options to the command.
-		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', LEVELS[8], assembled);
+		// -c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p LEVELS[8]
+		cmd += util.format('-c:a libfdk_aac "%s"', assembled);
 
 		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
@@ -806,8 +826,8 @@ var add_music = function(done) {
 		var filters = [];
 
 		// adjust audio levels and formats of audio tracks
-		filters.push('[0:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=1.5[audio]')
-		filters.push('[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0.5[song]');
+		filters.push('[0:a]volume=1.0,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[audio]')
+		filters.push('[1:a]volume=0.5,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[song]');
 
 		// merge music into mix
 		filters.push('[song][audio]amerge,pan=stereo:c0<c0+c2:c1<c1+c3[a]')
@@ -816,7 +836,7 @@ var add_music = function(done) {
 		cmd += util.format('-filter_complex "%s" -map 0:v -map "[a]" ', filters.join(";"));
 
 		// Add the output options to the command.
-		cmd += util.format('-c:v libx264 -preset %s -crf 18 -pix_fmt yuv420p "%s"', LEVELS[5], with_music);
+		cmd += util.format('-c:v libx264 -preset %s -c:a libfdk_aac -crf 18 -pix_fmt yuv420p "%s"', LEVELS[5], with_music);
 
 		console.log(cmd);
 		exec(cmd, function(error, stdout, stderr){
@@ -854,13 +874,14 @@ var cleanup = function(done) {
 
 
 var tasks = [
+	requirements_check,
 	load_project,
 	download_song,
 	get_song_duration,
 	get_song_info,
 	search_pornhub,
 	search_youporn,
-	search_redtube,
+	//search_redtube,
 	search_youtube,
 	get_top_videos,
 	download_videos,
